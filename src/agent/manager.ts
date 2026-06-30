@@ -120,9 +120,12 @@ export class PiAgentManager extends EventEmitter {
                 { tools: tools.length > 0 ? tools : undefined, maxTokens: config.agent.maxTokens },
                 (chunk: any) => {
                     for (const choice of chunk.choices) {
-                        if (choice.delta.content) {
+                        if (choice.delta?.content) {
                             fullContent += choice.delta.content;
                             this.emitEvent('streamChunk', { content: choice.delta.content, fullContent });
+                        } else if (choice.delta?.reasoning_content) {
+                            // Show reasoning content as thinking indicator
+                            this.emitEvent('streamChunk', { content: '', reasoning: choice.delta.reasoning_content, fullContent });
                         }
                     }
                 },
