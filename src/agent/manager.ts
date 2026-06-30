@@ -9,7 +9,7 @@ import { getConfig } from '../utils/config';
 import { Logger } from '../utils/logger';
 import { registerAllTools } from '../tools';
 
-export type AgentEvent = 'userMessage' | 'assistantMessage' | 'toolCall' | 'toolResult' | 'streamChunk' | 'error' | 'clear' | 'status';
+export type AgentEvent = 'userMessage' | 'assistantMessage' | 'toolCall' | 'toolResult' | 'streamStart' | 'streamChunk' | 'error' | 'clear' | 'status';
 
 export interface AgentEventData {
     type: AgentEvent;
@@ -114,6 +114,7 @@ export class PiAgentManager extends EventEmitter {
             this.emitEvent('status', { status: 'thinking' });
 
             let fullContent = '';
+            this.emitEvent('streamStart', {});
             const response = await this.client.streamCompletion(
                 messages,
                 { tools: tools.length > 0 ? tools : undefined, maxTokens: config.agent.maxTokens },

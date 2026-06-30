@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { PiAgentManager, AgentEvent, AgentEventData } from '../agent/manager';
+import { PiAgentManager, AgentEventData } from '../agent/manager';
 import { getChatWebviewContent } from './webviewContent';
 import { Logger } from '../utils/logger';
 import { buildContextString } from '../utils/context';
@@ -30,14 +30,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         webviewView.webview.html = getChatWebviewContent(webviewView.webview, this.extensionUri);
 
         webviewView.webview.onDidReceiveMessage(async (message) => {
+            if (!message || !message.type) { return; }
+
             switch (message.type) {
-                case 'sendMessage':
-                    if (message.text) { await this.handleUserMessage(message.text); }
+                // Webview sends { type: 'userMessage', data: { text: '...' } }
+                case 'userMessage': {
+                    const text = message.data?.text;
+                    if (text) {
+                        this.logger.info('User message: ' + text);
+                        await this.handleUserMessage(text);
+                    }
                     break;
+                }
                 case 'stop':
                     this.manager.stop();
                     break;
                 case 'ready':
+                    this.logger.info('Webview ready');
                     break;
             }
         });
@@ -45,7 +54,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     private async handleUserMessage(text: string): Promise<void> {
         if (text.startsWith('/')) { await this.handleCommand(text); return; }
-        await this.manager.processUserMessage(text, buildContextString());
+        try {
+            await this.manager.processUserMessage(text, buildContextString());
+        } catch (err: any) {
+            this.logger.error('Error processing message: ' + err.message, err);
+            this.postMessage({ type: 'error', data: { message: err.message } });
+        }
     }
 
     private async handleCommand(text: string): Promise<void> {
@@ -63,28 +77,65 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             case 'plan': vscode.commands.executeCommand('pi-agent.planMode'); break;
             case 'scout':
                 if (args) { await this.manager.processAgentMessage('scout', args); }
-                else { this.postMessage({ type: 'error', message: 'Usage: /scout <what to investigate>' }); }
+                else { this.postMessage({ type: 'error', data: { message: 'Usage: /scout <what to investigate>' } }); }
                 break;
             case 'research':
                 if (args) { await this.manager.processAgentMessage('researcher', args); }
-                else { this.postMessage({ type: 'error', message: 'Usage: /research <topic>' }); }
+                else { this.postMessage({ type: 'error', data: { message: 'Usage: /research <topic>' } }); }
                 break;
             case 'clear': this.manager.clearSession(); break;
-            default: this.postMessage({ type: 'error', message: 'Unknown command: /' + command });
+            default: this.postMessage({ type: 'error', data: { message: 'Unknown command: /' + command } });
         }
     }
 
     private handleAgentEvent(event: AgentEventData): void {
-        if (!this.webviewView) { return; }
+        if (!this.webviewView) {
+            this.logger.warn('No webviewView available for event: ' + event.type);
+            return;
+        }
+
         switch (event.type) {
-            case 'userMessage': break;
-            case 'streamChunk': this.postMessage({ type: 'streamChunk', content: event.data.content }); break;
-            case 'assistantMessage': this.postMessage({ type: 'assistantMessage', content: event.data.content, agent: event.data.agent }); break;
-            case 'toolCall': this.postMessage({ type: 'toolCall', id: event.data.id, name: event.data.name, arguments: event.data.arguments }); break;
-            case 'toolResult': this.postMessage({ type: 'toolResult', id: event.data.id, name: event.data.name, result: event.data.result }); break;
-            case 'error': this.postMessage({ type: 'error', message: event.data.message }); break;
-            case 'clear': this.postMessage({ type: 'clear' }); break;
-            case 'status': this.postMessage({ type: 'status', status: event.data.status }); break;
+            case 'userMessage':
+                // Already displayed by webview
+                break;
+            case 'streamStart':
+                this.postMessage({ type: 'streamStart' });
+                break;
+            case 'streamChunk':
+                this.postMessage({ type: 'streamChunk', data: { text: event.data.content } });
+                break;
+            case 'assistantMessage':
+                // End stream first, then show final message
+                this.postMessage({ type: 'streamEnd' });
+                break;
+            case 'toolCall':
+                this.postMessage({
+                    type: 'toolCall',
+                    data: { name: event.data.name, arguments: event.data.arguments, status: 'running' }
+                });
+                break;
+            case 'toolResult':
+                this.postMessage({
+                    type: 'toolResult',
+                    data: {
+                        name: event.data.name,
+                        result: event.data.result?.content || event.data.result,
+                        error: event.data.result?.isError ? event.data.result.content : null,
+                    }
+                });
+                break;
+            case 'error':
+                this.postMessage({ type: 'error', data: { message: event.data.message } });
+                break;
+            case 'clear':
+                this.postMessage({ type: 'clear' });
+                break;
+            case 'status':
+                this.postMessage({
+                    type: 'status',
+                    data: { state: event.data.status, text: event.data.status === 'thinking' ? 'Thinking...' : 'Ready' }
+                });
+                break;
         }
     }
 
