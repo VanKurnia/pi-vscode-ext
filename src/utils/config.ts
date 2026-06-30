@@ -19,7 +19,7 @@ export function getConfig(): PiConfig {
             completionModel: c.get<string>('api.completionModel', ''),
         },
         agent: {
-            maxTokens: c.get<number>('agent.maxTokens', 4096),
+            maxTokens: c.get<number>('agent.maxTokens', 16384),
             temperature: c.get<number>('agent.temperature', 0.7),
             systemPrompt: c.get<string>('agent.systemPrompt', ''),
         },
