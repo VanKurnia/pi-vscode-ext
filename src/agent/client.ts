@@ -37,7 +37,8 @@ export class LlmClient {
 
     private makeRequest(endpoint: string, body: any): Promise<any> {
         const config = getConfig();
-        const url = new URL(endpoint, config.api.baseUrl);
+        const base = config.api.baseUrl.endsWith('/') ? config.api.baseUrl : config.api.baseUrl + '/';
+        const url = new URL('chat/completions', base);
         const isHttps = url.protocol === 'https:';
         const bodyStr = JSON.stringify(body);
         this.logger.info('API Request: POST ' + url.href);
@@ -75,7 +76,8 @@ export class LlmClient {
 
     private makeStreamRequest(endpoint: string, body: any, onChunk: (chunk: any) => void, signal?: AbortSignal): Promise<any> {
         const config = getConfig();
-        const url = new URL(endpoint, config.api.baseUrl);
+        const base = config.api.baseUrl.endsWith('/') ? config.api.baseUrl : config.api.baseUrl + '/';
+        const url = new URL('chat/completions', base);
         const isHttps = url.protocol === 'https:';
         const bodyStr = JSON.stringify(body);
         this.logger.info('Stream Request: POST ' + url.href);
@@ -121,6 +123,8 @@ export class LlmClient {
                 }
 
                 // SSE streaming
+                let chunkCount = 0;
+                let parseErrors = 0;
                 res.on('data', (chunk: Buffer) => {
                     totalBytes += chunk.length;
                     buffer += chunk.toString();
@@ -130,8 +134,13 @@ export class LlmClient {
                     for (const line of lines) {
                         const trimmed = line.trim();
                         if (!trimmed || trimmed === 'data: [DONE]' || !trimmed.startsWith('data: ')) { continue; }
+                        const raw = trimmed.slice(6);
+                        chunkCount++;
+                        if (chunkCount <= 3) {
+                            this.logger.info('SSE chunk ' + chunkCount + ': ' + raw.slice(0, 300));
+                        }
                         try {
-                            const parsed = JSON.parse(trimmed.slice(6));
+                            const parsed = JSON.parse(raw);
                             if (!aggregated) {
                                 aggregated = {
                                     id: parsed.id,
