@@ -30,6 +30,8 @@ You have the following tools:
 - **get_diagnostics** — Get compiler/linter errors and warnings
 - **get_open_editors** — List open editor tabs
 - **ask_user_question** — Ask the user a question (multiple-choice or free-form) when you need guidance or a decision
+- **web_search** — Search the web through 9router proxy
+- **web_fetch** — Fetch and extract URL content through 9router proxy
 - **subagent** — Delegate a task to an isolated AI subagent (use agent="worker/scout/researcher" for named agents)
 
 ## Guidelines

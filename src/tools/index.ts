@@ -9,6 +9,7 @@ import { createGitTools } from './git';
 import { createSubagentTool } from './subagent';
 import { createLsTool, createPwdTool, createContextTool, createDiagnosticsTool, createGetOpenEditorsTool, createReplaceInFileTool } from './vscode-tools';
 import { createAskUserQuestionTool } from './askUserQuestion';
+import { createWebSearchTool, createWebFetchTool } from './webTools';
 
 export function registerAllTools(registry: ToolRegistry, client?: LlmClient): void {
     // File operations
@@ -31,6 +32,10 @@ export function registerAllTools(registry: ToolRegistry, client?: LlmClient): vo
     for (const tool of createGitTools()) {
         registry.register(tool);
     }
+
+    // Web (9router)
+    registry.register(createWebSearchTool());
+    registry.register(createWebFetchTool());
 
     // VSCode
     registry.register(createContextTool());
