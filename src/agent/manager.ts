@@ -31,7 +31,7 @@ export class PiAgentManager extends EventEmitter {
         this.toolRegistry = new ToolRegistry();
         const config = getConfig();
         this.session = new Session(buildSystemPrompt(), config.agent.maxTokens, config.api.model, config.api.baseUrl);
-        registerAllTools(this.toolRegistry);
+        registerAllTools(this.toolRegistry, this.client);
         this.refreshAgents();
         this.logger.info('PiAgentManager initialized');
     }
