@@ -1,16 +1,16 @@
 import * as vscode from 'vscode';
-import { LlmClient } from '../agent/client';
+// LlmClient replaced by bridge — using any for now
 import { getConfig, getCompletionModel } from '../utils/config';
 import { Logger } from '../utils/logger';
 
 export class InlineCompletionProvider implements vscode.InlineCompletionItemProvider {
-    private client: LlmClient;
+    private client: any;
     private logger = Logger.getInstance();
     private debounceTimer: ReturnType<typeof setTimeout> | undefined;
     private lastRequestTime = 0;
     private pendingCancellation: vscode.CancellationTokenSource | undefined;
 
-    constructor(client: LlmClient) {
+    constructor(client: any) {
         this.client = client;
     }
 

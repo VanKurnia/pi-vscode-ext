@@ -1,5 +1,5 @@
 import { Tool } from '../agent/tools';
-import { Session, ChatMessage } from '../agent/session';
+// Session/ChatMessage replaced by bridge — using any for now
 
 /**
  * recall tool — equivalent to pi-blackhole's unified recall.

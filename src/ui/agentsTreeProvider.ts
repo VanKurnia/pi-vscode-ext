@@ -1,13 +1,13 @@
 import * as vscode from 'vscode';
-import { PiAgentManager } from '../agent/manager';
+// PiAgentManager replaced by bridge — using any for now
 import { AgentConfig } from '../agent/agents';
 
 export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentTreeItem>, vscode.Disposable {
     private _onDidChangeTreeData = new vscode.EventEmitter<AgentTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
-    private manager: PiAgentManager;
+    private manager: any;
 
-    constructor(manager: PiAgentManager) { this.manager = manager; }
+    constructor(manager: any) { this.manager = manager; }
 
     refresh(): void { this.manager.refreshAgents(); this._onDidChangeTreeData.fire(); }
 

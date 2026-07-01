@@ -1,5 +1,5 @@
 import { ToolRegistry } from '../agent/tools';
-import { LlmClient } from '../agent/client';
+// LlmClient replaced by bridge — using any for now
 import { createReadFileTool } from './readFile';
 import { createWriteFileTool } from './writeFile';
 import { createEditFileTool } from './editFile';
@@ -11,7 +11,7 @@ import { createLsTool, createPwdTool, createContextTool, createDiagnosticsTool, 
 import { createAskUserQuestionTool } from './askUserQuestion';
 import { createWebSearchTool, createWebFetchTool } from './webTools';
 import { createRecallTool } from './recall';
-import { Session } from '../agent/session';
+// Session replaced by bridge — using any for now
 import { createDbTools } from './dbTools';
 import { createSkillTools } from './skillTools';
 import { createTodoTool } from './todoTool';

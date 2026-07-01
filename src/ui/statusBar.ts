@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { PiAgentManager } from '../agent/manager';
+// PiAgentManager replaced by bridge — using any for now
 import { getConfig } from '../utils/config';
 
 export class StatusBarManager {
@@ -8,7 +8,7 @@ export class StatusBarManager {
     private speedItem: vscode.StatusBarItem;
     private gitItem: vscode.StatusBarItem;       // pi-zentui: git branch + status
     private contextItem: vscode.StatusBarItem;    // pi-zentui: context usage
-    private manager: PiAgentManager;
+    private manager: any;
 
     // Speed tracking state (pi-speeed equivalent)
     private streamStartTime: number = 0;
@@ -23,7 +23,7 @@ export class StatusBarManager {
     private hideSpeedTimer: ReturnType<typeof setTimeout> | undefined;
     private disposables: vscode.Disposable[] = [];
 
-    constructor(manager: PiAgentManager) {
+    constructor(manager: any) {
         this.manager = manager;
 
         // Main status — left, priority 100

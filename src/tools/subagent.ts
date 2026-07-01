@@ -1,7 +1,7 @@
 import { Tool, ToolRegistry } from '../agent/tools';
-import { LlmClient } from '../agent/client';
+// LlmClient replaced by bridge — using any for now
 import { getChatModel } from '../utils/config';
-import { buildSystemPrompt } from '../agent/prompts';
+// buildSystemPrompt removed — using pi-agent-core system prompts
 import { discoverAgents, AgentConfig, resolveModel } from '../agent/agents';
 import { Logger } from '../utils/logger';
 import * as vscode from 'vscode';
