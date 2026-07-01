@@ -8,7 +8,7 @@ import * as vscode from 'vscode';
 
 const MAX_SUBAGENT_ITERATIONS = 5;
 
-export function createSubagentTool(client: LlmClient, toolRegistry?: ToolRegistry): Tool {
+export function createSubagentTool(client: any, toolRegistry?: ToolRegistry): Tool {
     return {
         name: 'subagent',
         description: `Delegate a task to an isolated AI subagent. Supports two modes:
@@ -39,14 +39,13 @@ export function createSubagentTool(client: LlmClient, toolRegistry?: ToolRegistr
                         const available = agents.map(a => a.name).join(', ') || 'none';
                         return { content: `Unknown agent: "${args.agent}". Available agents: ${available}`, isError: true };
                     }
-                    systemPrompt = agentConfig.systemPrompt || buildSystemPrompt();
+                    systemPrompt = agentConfig.systemPrompt || 'You are a helpful AI coding assistant.';
                     toolNames = agentConfig.tools.length > 0 ? agentConfig.tools : undefined;
                     model = resolveModel(agentConfig.model) || getChatModel();
                     logger.info(`Subagent dispatch: agent=${agentConfig.name}, tools=[${(toolNames || []).join(', ')}], model=${model}`);
                 } else {
                     // Ad-hoc mode — use default system prompt with all tools
-                    systemPrompt = buildSystemPrompt() +
-                        '\n\nYou are a subagent — an isolated AI worker. Complete the task thoroughly and return your findings. ' +
+                    systemPrompt = 'You are a subagent — an isolated AI worker. Complete the task thoroughly and return your findings. ' +
                         'You have access to tools (read files, search, bash, git). Use them proactively to investigate. ' +
                         'When done, provide a clear summary of your findings.';
                     toolNames = undefined; // all tools
