@@ -1,240 +1,225 @@
-# Pi Agent — VS Code Extension
+# π Agent — AI Coding Assistant for VS Code
 
-A powerful AI coding assistant for VS Code, inspired by GitHub Copilot. Connects to any OpenAI-compatible API for chat-based coding assistance, inline code completions, and multi-agent orchestration.
+A powerful AI coding agent extension for VS Code, inspired by GitHub Copilot Chat. Connects to any OpenAI-compatible LLM API and provides a full-featured coding assistant with tools, subagents, slash commands, and a modern chat UI.
 
-![VS Code](https://img.shields.io/badge/VS%20Code-1.90%2B-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+![VS Code](https://img.shields.io/badge/VS%20Code-1.85%2B-blue)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-## Features
+## ✨ Features
 
-### 🤖 Chat Sidebar
-- Interactive chat panel in the sidebar for conversational coding assistance
-- Supports slash commands (`/explain`, `/fix`, `/refactor`, `/test`, `/review`, `/commit`, `/plan`)
-- Streaming responses with real-time updates
-- Tool call execution with visible results
+### 🤖 AI Chat Sidebar
+- Modern Copilot Chat-style UI with dark theme
+- Streaming responses with real-time rendering
+- Code blocks with copy button and syntax highlighting
+- Tool call cards (collapsible, with status indicators)
+- Slash command quick actions on welcome screen
+- Status bar with live state indicator
 
-### 💡 Inline Code Completions
-- GitHub Copilot-style inline suggestions as you type
-- Configurable debounce and toggle on/off
-- Context-aware (uses surrounding 30+ lines)
+### 🛠️ 18 Built-in Tools
 
-### 🛠️ Agent Tools (8 tools built-in)
-| Tool | Description |
-|------|-------------|
-| `read_file` | Read file contents with line numbers |
-| `write_file` | Create or overwrite files |
-| `edit_file` | Find-and-replace with unified diff output |
-| `bash` | Execute shell commands with safety guard |
-| `grep` | Search file contents with regex |
-| `find` | Find files by glob pattern |
-| `git_*` | Git status, diff, add, commit, log, branch, show |
-| `bashGuard` | Blocks dangerous commands (`rm -rf /`, `sudo`, etc.) |
+| Category | Tools | Description |
+|----------|-------|-------------|
+| **File** | `read_file`, `write_file`, `edit_file`, `replace_in_file` | Read, write, edit, and replace file content |
+| **Search** | `grep`, `find` | Regex content search, glob file search |
+| **Shell** | `bash`, `ls`, `pwd` | Execute commands with safety guard |
+| **Git** | `git_status`, `git_diff`, `git_diff_staged`, `git_add`, `git_commit`, `git_log`, `git_branch`, `git_show`, `git_reset` | Full git workflow |
+| **VSCode** | `context`, `get_diagnostics`, `get_open_editors` | Workspace awareness |
+| **AI** | `subagent` | Delegate tasks to isolated AI subagents |
 
-### 🔒 Safety First
-- **BashGuard** blocks destructive commands before execution
-- Configurable safety toggle (`pi-agent.tools.enableBashGuard`)
-- Sandboxed tool execution within workspace
+### 💬 Slash Commands
 
-### 👥 Multi-Agent System
-- Discover and use custom agents from `.pi/agent/agents/` directory
-- Built-in bundled agents: worker, reviewer, planner
-- Agent-to-agent delegation (planner → worker → reviewer)
-- Each agent can have its own model, tools, and system prompt
+| Command | Description |
+|---------|-------------|
+| `/explain` | Explain selected code or current file |
+| `/fix` | Fix errors in selected code |
+| `/refactor` | Refactor selected code |
+| `/test` | Generate tests for selected code |
+| `/review` | Review code for issues and improvements |
+| `/commit` | Generate a conventional commit message |
+| `/plan [task]` | Toggle plan mode (optional: generate plan for task) |
+| `/scout <query>` | Quick codebase reconnaissance |
+| `/research <topic>` | Research a topic |
+| `/clear` | Clear chat history |
+| `/help` | Show all available commands |
 
-### 📊 Explorer Views
-- **Agents** view — see available agents in the sidebar
-- **File Changes** view — track lines added/removed per file
+### 🔒 Safety Features
+- **BashGuard** — blocks dangerous commands (`rm -rf /`, `sudo`, reverse shells, fork bombs)
+- **Path traversal protection** in git operations
+- **Confirmation prompts** for destructive operations
 
-### ⌨️ Keyboard Shortcuts
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+Shift+P` → `Pi Agent: Open Chat` | Open chat sidebar |
-| Select code + `Ctrl+Shift+P` → `Explain` | Explain selected code |
-| Select code + `Ctrl+Shift+P` → `Fix` | Fix selected code |
-| `Ctrl+Shift+P` → `Pi Agent: Toggle Inline` | Toggle inline suggestions |
+### 📝 Inline Code Suggestions
+- Context-aware ghost text suggestions as you type
+- Configurable debounce delay
+- Toggle on/off via command palette or settings
 
-## Setup
+### 🔍 Explorer Views
+- **Agents** — discover and select AI agents
+- **Changes** — track file modifications with added/removed line counts
 
-### Prerequisites
-- VS Code 1.90 or higher
-- An OpenAI-compatible API endpoint (e.g., OpenAI, Ollama, LM Studio, vLLM, 9router)
+## 🚀 Quick Start
 
-### Installation
+### 1. Install
 
-1. Clone this repo:
-   ```bash
-   git clone https://github.com/VanKurnia/pi-vscode-ext.git
-   cd pi-vscode-ext
-   ```
+```bash
+# Clone the repository
+git clone https://github.com/VanKurnia/pi-vscode-ext.git
+cd pi-vscode-ext
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+# Install dependencies
+npm install
 
-3. Build the extension:
-   ```bash
-   npx webpack --mode production
-   ```
+# Open in VS Code
+code .
+```
 
-4. Open in VS Code and press `F5` to launch Extension Development Host
+### 2. Run (Development)
 
-### Configuration
+Press **F5** to launch the Extension Development Host.
 
-Open VS Code Settings (`Ctrl+,`) and search for `pi-agent`:
+### 3. Configure API
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `pi-agent.api.baseUrl` | `http://localhost:8080/v1` | OpenAI-compatible API base URL |
-| `pi-agent.api.apiKey` | `""` | API key (leave empty for local APIs) |
-| `pi-agent.api.model` | `versatile` | Default model for chat |
-| `pi-agent.api.chatModel` | `""` | Override model for chat (optional) |
-| `pi-agent.api.completionModel` | `""` | Override model for completions (optional) |
-| `pi-agent.agent.maxTokens` | `4096` | Max tokens per response |
-| `pi-agent.agent.temperature` | `0.7` | Sampling temperature |
-| `pi-agent.inlineSuggestions.enabled` | `false` | Enable inline completions |
-| `pi-agent.inlineSuggestions.debounceMs` | `500` | Debounce for inline suggestions |
-| `pi-agent.tools.enableBashGuard` | `true` | Block dangerous shell commands |
-| `pi-agent.tools.enableGit` | `true` | Enable git tools |
-| `pi-agent.subagents.maxConcurrency` | `4` | Max parallel agents |
-| `pi-agent.subagents.agentsDir` | `""` | Custom agents directory |
+In the new VS Code window, open Settings (`Ctrl+,`) and configure:
 
-### Example: Connecting to 9router
 ```json
 {
     "pi-agent.api.baseUrl": "http://localhost:8080/v1",
-    "pi-agent.api.model": "versatile"
+    "pi-agent.api.apiKey": "your-api-key",
+    "pi-agent.api.model": "your-model"
 }
 ```
 
-### Example: Connecting to OpenAI
-```json
-{
-    "pi-agent.api.baseUrl": "https://api.openai.com/v1",
-    "pi-agent.api.apiKey": "sk-...",
-    "pi-agent.api.model": "gpt-4o"
-}
-```
+### 4. Start Chatting
 
-## Usage
+- Click the **π Agent** icon in the activity bar (left sidebar)
+- Type a message or use `/` commands
+- Select code in the editor → right-click → **Pi Agent** menu
 
-### Chat Sidebar
-1. Click the Pi Agent icon in the activity bar (left side)
-2. Type your question or request in the chat input
-3. Watch the agent use tools and respond in real-time
+## ⚙️ Configuration
 
-### Slash Commands
-Type these in the chat input:
-- `/explain` — Explain the active file or selected code
-- `/fix` — Fix selected code (includes diagnostic errors)
-- `/refactor` — Refactor selected code
-- `/test` — Generate tests for the active file
-- `/review` — Code review the active file or selection
-- `/commit` — Generate a conventional commit message
-- `/plan` — Enter planning mode
-- `/scout <task>` — Quick investigation
-- `/research <topic>` — Research a topic
-- `/clear` — Clear conversation history
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `pi-agent.api.baseUrl` | string | `http://localhost:8080/v1` | OpenAI-compatible API endpoint |
+| `pi-agent.api.apiKey` | string | `""` | API key (empty for local providers) |
+| `pi-agent.api.model` | string | `versatile` | Default model |
+| `pi-agent.api.chatModel` | string | `""` | Model for chat (overrides default) |
+| `pi-agent.api.completionModel` | string | `""` | Model for inline completions |
+| `pi-agent.agent.maxTokens` | number | `16384` | Max tokens per response |
+| `pi-agent.agent.temperature` | number | `0.7` | Temperature |
+| `pi-agent.agent.systemPrompt` | string | `""` | Custom system prompt (appended) |
+| `pi-agent.inlineSuggestions.enabled` | boolean | `false` | Enable inline suggestions |
+| `pi-agent.inlineSuggestions.debounceMs` | number | `500` | Debounce delay (ms) |
+| `pi-agent.subagents.maxConcurrency` | number | `4` | Max concurrent subagents |
+| `pi-agent.tools.enableBashGuard` | boolean | `true` | Enable bash safety guard |
+| `pi-agent.tools.enableGit` | boolean | `true` | Enable git tools |
 
-### Inline Completions
-1. Enable in settings: `pi-agent.inlineSuggestions.enabled: true`
-2. Start typing code — suggestions appear as ghost text
-3. Press `Tab` to accept, `Escape` to dismiss
-
-### Creating Custom Agents
-Create a `.md` file in `~/.pi/agent/agents/` or `.pi/agent/agents/` in your workspace:
-
-```markdown
----
-name: security-auditor
-description: Audits code for security vulnerabilities
-model: gpt-4o
-tools: read_file,grep,find,bash
----
-
-You are a security auditor. Review code for:
-1. SQL injection vulnerabilities
-2. XSS vulnerabilities
-3. Authentication/authorization flaws
-4. Sensitive data exposure
-5. Insecure dependencies
-
-For each issue found, provide severity, location, and fix recommendation.
-```
-
-## Architecture
+## 🏗️ Architecture
 
 ```
 pi-vscode-ext/
 ├── src/
-│   ├── extension.ts          # Entry point — activation & registration
+│   ├── extension.ts              # Entry point — registers all providers
 │   ├── agent/
-│   │   ├── client.ts         # OpenAI-compatible HTTP client (streaming)
-│   │   ├── manager.ts        # Agent orchestrator with tool loop
-│   │   ├── session.ts        # Conversation history management
-│   │   ├── tools.ts          # Tool registry & type definitions
-│   │   ├── agents.ts         # Agent discovery from .md files
-│   │   └── prompts.ts        # System prompt builder
+│   │   ├── client.ts             # OpenAI-compatible API client (streaming + non-streaming)
+│   │   ├── manager.ts            # Agent orchestrator (tool loop, events)
+│   │   ├── session.ts            # Conversation history management
+│   │   ├── prompts.ts            # System prompts with tool documentation
+│   │   ├── agents.ts             # Agent discovery (.md files with frontmatter)
+│   │   └── tools.ts              # Tool registry + interface
 │   ├── tools/
-│   │   ├── bash.ts           # Shell execution tool
-│   │   ├── bashGuard.ts      # Safety guard for shell commands
-│   │   ├── readFile.ts       # File reading tool
-│   │   ├── writeFile.ts      # File writing tool
-│   │   ├── editFile.ts       # Find-and-replace edit tool
-│   │   ├── git.ts            # Git operations tools
-│   │   ├── search.ts         # Grep & find tools
-│   │   └── index.ts          # Tool registration
+│   │   ├── index.ts              # Tool registration (18 tools)
+│   │   ├── readFile.ts           # Read file with line numbers
+│   │   ├── writeFile.ts          # Write/create files
+│   │   ├── editFile.ts           # Find & replace with fuzzy matching
+│   │   ├── bash.ts               # Shell execution with BashGuard
+│   │   ├── bashGuard.ts          # Safety checks (17+ blocked patterns)
+│   │   ├── search.ts             # grep + find tools
+│   │   ├── git.ts                # 9 git operations
+│   │   ├── subagent.ts           # Delegated LLM task execution
+│   │   └── vscode-tools.ts       # VSCode-specific tools (ls, pwd, context, diagnostics)
 │   ├── ui/
-│   │   ├── chatViewProvider.ts    # Sidebar chat webview
-│   │   ├── webviewContent.ts      # Chat HTML/CSS/JS
-│   │   ├── inlineCompletion.ts    # Inline suggestions provider
-│   │   ├── statusBar.ts           # Status bar manager
-│   │   ├── agentsTreeProvider.ts  # Agents explorer view
-│   │   └── changesTreeProvider.ts # File changes tracking view
+│   │   ├── chatViewProvider.ts   # Sidebar webview provider
+│   │   ├── webviewContent.ts     # Chat HTML/CSS/JS generator
+│   │   ├── inlineCompletion.ts   # Inline suggestions provider
+│   │   ├── statusBar.ts          # Status bar item
+│   │   ├── agentsTreeProvider.ts # Agents tree view
+│   │   └── changesTreeProvider.ts # File changes tree view
 │   ├── commands/
-│   │   └── index.ts          # All command implementations
+│   │   └── index.ts              # Command registration
 │   └── utils/
-│       ├── config.ts         # Configuration reader
-│       ├── context.ts        # Editor context builder
-│       ├── logger.ts         # Output channel logger
-│       └── diff.ts           # Diff utilities
-├── agents/                   # Bundled agent definitions
-│   ├── worker.md
-│   ├── reviewer.md
-│   └── planner.md
-├── package.json              # Extension manifest
-├── tsconfig.json             # TypeScript config
-└── webpack.config.js         # Build config
+│       ├── config.ts             # Configuration reader
+│       ├── context.ts            # Workspace context builder
+│       ├── logger.ts             # Output channel logger
+│       └── diff.ts               # Diff utility
+├── agents/                       # Agent definition files (.md)
+├── images/                       # Extension icons
+├── package.json                  # Extension manifest
+├── tsconfig.json                 # TypeScript config
+├── .vscode/
+│   ├── launch.json               # F5 debug configuration
+│   └── tasks.json                # Build tasks
+└── README.md
 ```
 
-### How It Works
+## 🔌 Compatible Providers
 
-1. **Extension activates** when VS Code starts or when a Pi Agent command is triggered
-2. **Manager** (`PiAgentManager`) creates a session and registers all tools
-3. **User sends a message** → Manager adds context (active file, selection, diagnostics)
-4. **Agent loop**: Send message + tool definitions to LLM → If LLM calls a tool, execute it and send result back → Repeat until LLM gives a final answer
-5. **Streaming**: Each chunk from the LLM is forwarded to the chat webview in real-time
-6. **Inline completions**: A separate lighter model call provides code completions at cursor position
+| Provider | baseUrl Example |
+|----------|----------------|
+| **9router** | `http://your-host:8080/v1` |
+| **OpenAI** | `https://api.openai.com/v1` |
+| **Ollama** | `http://localhost:11434/v1` |
+| **LM Studio** | `http://localhost:1234/v1` |
+| **vLLM** | `http://localhost:8000/v1` |
+| **LiteLLM** | `http://localhost:4000/v1` |
+| **Together AI** | `https://api.together.xyz/v1` |
+| **Groq** | `https://api.groq.com/openai/v1` |
 
-## Development
+## 📦 Build & Package
 
-### Build
 ```bash
-npm run compile        # TypeScript compile
-npx webpack --mode production  # Production bundle
+# Development build
+npm run compile
+
+# Production bundle
+npx webpack --mode production
+
+# Package as .vsix
+npm run package
 ```
 
-### Watch mode
+## 🧪 Development
+
 ```bash
+# Watch mode (auto-recompile)
 npm run watch
+
+# Type check
+npx tsc --noEmit
+
+# Lint
+npm run lint
 ```
 
-### Package for distribution
-```bash
-npm install -g @vscode/vsce
-vsce package
-```
+## 📋 Requirements
 
-## License
+- VS Code 1.85 or newer
+- Node.js 18+
+- An OpenAI-compatible LLM API endpoint
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run `npx tsc --noEmit` to verify
+5. Submit a pull request
+
+## 📄 License
 
 MIT
+
+## 🙏 Acknowledgments
+
+- Inspired by [GitHub Copilot Chat](https://github.com/microsoft/vscode-copilot-chat)
+- Agent architecture based on [pi-agent-setup](https://github.com/VanKurnia/pi-agent-setup)
+- Built for the [pi](https://pi.dev) ecosystem
