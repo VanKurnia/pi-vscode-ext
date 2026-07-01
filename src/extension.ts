@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import { PiAgentManager } from './agent/manager';
 import { LlmClient } from './agent/client';
-import { ChatViewProvider } from './ui/chatViewProvider';
 import { StatusBarManager } from './ui/statusBar';
 import { InlineCompletionProvider } from './ui/inlineCompletion';
 import { AgentsTreeProvider } from './ui/agentsTreeProvider';
@@ -18,18 +17,12 @@ let inlineCompletionDisposable: vscode.Disposable | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
     logger = Logger.getInstance();
-    logger.info('Pi Agent extension activating...');
+    logger.info('Pi Agent activating...');
 
     // Create the main manager
     manager = new PiAgentManager();
 
-    // Register chat view provider
-    const chatProvider = new ChatViewProvider(context.extensionUri, manager);
-    context.subscriptions.push(
-        vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, chatProvider)
-    );
-
-    // Register tree views
+    // Register tree views (sidebar)
     const agentsProvider = new AgentsTreeProvider(manager);
     const changesProvider = new ChangesTreeProvider();
     context.subscriptions.push(
@@ -46,54 +39,122 @@ export function activate(context: vscode.ExtensionContext) {
     inlineCompletionProvider = new InlineCompletionProvider(client);
     updateInlineCompletions();
 
-    // Register VSCode Chat participant (Copilot Chat integration)
-    try {
-        if ('createChatParticipant' in vscode.chat) {
-            const participant = (vscode.chat as any).createChatParticipant(
-                'pi.chat',
-                async (request: any, _ctx: any, stream: any, _token: any) => {
-                    const prompt = request.prompt;
-                    if (request.command) {
-                        stream.markdown('**/' + request.command + '** — use the Pi Agent sidebar chat for slash commands.\n');
-                        return;
-                    }
-                    try {
-                        const ctx = await buildContextString();
-                        await manager.processUserMessage(prompt, ctx);
-                        stream.markdown('Response sent to Pi Agent sidebar.\n');
-                    } catch (err: any) {
-                        stream.markdown('Error: ' + err.message + '\n');
-                    }
-                }
-            );
-            if (participant) {
-                participant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'images', 'icon.svg');
-                context.subscriptions.push(participant);
-                logger.info('Chat participant registered');
-            }
-        }
-    } catch (err: any) {
-        logger.warn('Could not register chat participant: ' + err.message);
-    }
+    // ═══════════════════════════════════════════════════════════════
+    // PRIMARY CHAT: Native VS Code ChatParticipant
+    // ═══════════════════════════════════════════════════════════════
+    const chatParticipant = vscode.chat.createChatParticipant(
+        'pi-agent.chat',
+        async (
+            request: vscode.ChatRequest,
+            chatContext: vscode.ChatContext,
+            stream: vscode.ChatResponseStream,
+            token: vscode.CancellationToken
+        ): Promise<vscode.ChatResult> => {
+            const prompt = request.prompt;
 
-    // Register commands
+            // ── Slash commands ──────────────────────────────────
+            if (request.command) {
+                return await handleSlashCommand(request.command, prompt, stream);
+            }
+
+            // ── Regular message ─────────────────────────────────
+            if (!prompt.trim()) {
+                stream.markdown('Type a message or use a command:\n\n');
+                stream.markdown(helpMarkdown());
+                return {};
+            }
+
+            stream.progress('Thinking...');
+            const ctx = await buildContextString();
+
+            // Wire manager events to stream
+            const disposables: vscode.Disposable[] = [];
+            const toolInvocations = new Map<string, any>();
+
+            const eventHandler = (event: any) => {
+                switch (event.type) {
+                    case 'streamChunk':
+                        if (event.data.content) {
+                            stream.markdown(event.data.content);
+                        }
+                        break;
+                    case 'toolCall': {
+                        const name = event.data.name;
+                        const args = event.data.arguments;
+                        stream.markdown('\n\n⚡ **`' + name + '`**');
+                        if (args) {
+                            const argsStr = typeof args === 'string' ? args : JSON.stringify(args, null, 2);
+                            if (argsStr.length < 200) {
+                                stream.markdown(' `' + argsStr.replace(/\n/g, ' ').slice(0, 100) + '`');
+                            }
+                        }
+                        stream.markdown('\n');
+                        toolInvocations.set(event.data.id || name, event.data);
+                        break;
+                    }
+                    case 'toolResult': {
+                        const id = event.data.id || event.data.name;
+                        const result = event.data.result;
+                        const isError = event.data.error;
+                        if (isError) {
+                            stream.markdown('  ❌ Error: ' + (typeof isError === 'string' ? isError : 'Tool failed') + '\n');
+                        } else {
+                            stream.markdown('  ✅\n');
+                        }
+                        break;
+                    }
+                    case 'error':
+                        stream.markdown('\n\n❌ **Error:** ' + event.data.message + '\n');
+                        break;
+                }
+            };
+            manager.on('event', eventHandler);
+            disposables.push({ dispose: () => { manager.removeListener('event', eventHandler); } });
+
+            try {
+                // Handle abort
+                token.onCancellationRequested(() => { manager.stop(); });
+
+                await manager.processUserMessage(prompt, ctx);
+            } catch (err: any) {
+                stream.markdown('\n\n❌ **Error:** ' + err.message + '\n');
+            } finally {
+                disposables.forEach(d => d.dispose());
+            }
+
+            return {};
+        }
+    );
+
+    chatParticipant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'images', 'icon.svg');
+    context.subscriptions.push(chatParticipant);
+    logger.info('Chat participant registered');
+
+    // ═══════════════════════════════════════════════════════════════
+    // COMMANDS
+    // ═══════════════════════════════════════════════════════════════
     context.subscriptions.push(
-        vscode.commands.registerCommand('pi-agent.openChat', () => chatProvider.show()),
         vscode.commands.registerCommand('pi-agent.explainCode', async () => {
             const editor = vscode.window.activeTextEditor;
             if (!editor) { vscode.window.showWarningMessage('No active editor'); return; }
             const code = editor.document.getText(editor.selection) || editor.document.getText();
             const lang = editor.document.languageId;
-            chatProvider.show();
-            await manager.processUserMessage('Explain this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', await buildContextString());
+            await vscode.commands.executeCommand('workbench.action.chat.open', 'Ask Pi Agent');
+            // Fallback: process directly
+            await manager.processUserMessage(
+                '/explain ' + lang + ':\n```' + lang + '\n' + code + '\n```',
+                await buildContextString()
+            );
         }),
         vscode.commands.registerCommand('pi-agent.fixCode', async () => {
             const editor = vscode.window.activeTextEditor;
             if (!editor) { vscode.window.showWarningMessage('No active editor'); return; }
             const code = editor.document.getText(editor.selection) || editor.document.getText();
             const lang = editor.document.languageId;
-            chatProvider.show();
-            await manager.processUserMessage('Fix errors in this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', await buildContextString());
+            await manager.processUserMessage(
+                'Fix errors in this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```',
+                await buildContextString()
+            );
         }),
         vscode.commands.registerCommand('pi-agent.refactorCode', async () => {
             const editor = vscode.window.activeTextEditor;
@@ -101,48 +162,54 @@ export function activate(context: vscode.ExtensionContext) {
             const code = editor.document.getText(editor.selection);
             if (!code) { vscode.window.showWarningMessage('Select code to refactor'); return; }
             const lang = editor.document.languageId;
-            chatProvider.show();
-            await manager.processUserMessage('Refactor this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', await buildContextString());
+            await manager.processUserMessage(
+                'Refactor this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```',
+                await buildContextString()
+            );
         }),
         vscode.commands.registerCommand('pi-agent.generateTests', async () => {
             const editor = vscode.window.activeTextEditor;
             if (!editor) { vscode.window.showWarningMessage('No active editor'); return; }
             const code = editor.document.getText(editor.selection) || editor.document.getText();
             const lang = editor.document.languageId;
-            chatProvider.show();
-            await manager.processUserMessage('Generate comprehensive tests for this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', await buildContextString());
+            await manager.processUserMessage(
+                'Generate comprehensive tests for this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```',
+                await buildContextString()
+            );
         }),
         vscode.commands.registerCommand('pi-agent.reviewCode', async () => {
             const editor = vscode.window.activeTextEditor;
             if (!editor) { vscode.window.showWarningMessage('No active editor'); return; }
             const code = editor.document.getText(editor.selection) || editor.document.getText();
             const lang = editor.document.languageId;
-            chatProvider.show();
-            await manager.processUserMessage('Review this ' + lang + ' code for issues and improvements:\n```' + lang + '\n' + code + '\n```', await buildContextString());
+            await manager.processUserMessage(
+                'Review this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```',
+                await buildContextString()
+            );
         }),
         vscode.commands.registerCommand('pi-agent.generateCommitMessage', async () => {
-            chatProvider.show();
-            await manager.processUserMessage('Generate a conventional commit message for the current staged changes. Use git_status and git_diff_staged tools.', await buildContextString());
+            await manager.processUserMessage(
+                'Generate a conventional commit message. Use git_status and git_diff_staged tools first.',
+                await buildContextString()
+            );
         }),
         vscode.commands.registerCommand('pi-agent.newSession', () => {
             manager.clearSession();
+            vscode.window.showInformationMessage('π Agent: Session cleared');
         }),
         vscode.commands.registerCommand('pi-agent.planMode', () => {
             const enabled = manager.togglePlanMode();
-            vscode.window.showInformationMessage('Plan Mode: ' + (enabled ? 'ON' : 'OFF'));
+            vscode.window.showInformationMessage('π Plan Mode: ' + (enabled ? 'ON' : 'OFF'));
         }),
         vscode.commands.registerCommand('pi-agent.toggleInlineSuggestions', () => {
             const config = getConfig();
             const newVal = !config.inlineSuggestions.enabled;
             vscode.workspace.getConfiguration('pi-agent').update('inlineSuggestions.enabled', newVal, vscode.ConfigurationTarget.Global);
-            vscode.window.showInformationMessage('Inline Suggestions: ' + (newVal ? 'ON' : 'OFF'));
+            vscode.window.showInformationMessage('π Inline Suggestions: ' + (newVal ? 'ON' : 'OFF'));
         }),
         vscode.commands.registerCommand('pi-agent.showContext', async () => {
             const ctx = await buildContextString();
-            vscode.window.showInformationMessage('Context: ' + ctx.slice(0, 200));
-        }),
-        vscode.commands.registerCommand('pi-agent.showChanges', () => {
-            vscode.window.showInformationMessage('Changes tracked in sidebar → Changes view');
+            vscode.window.showInformationMessage('π Context: ' + ctx.slice(0, 200));
         })
     );
 
@@ -151,7 +218,6 @@ export function activate(context: vscode.ExtensionContext) {
         onConfigChange(() => {
             statusBar.refreshModel();
             updateInlineCompletions();
-            logger.info('Configuration updated');
         })
     );
 
@@ -174,9 +240,120 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
-    logger.info('Pi Agent extension activated');
-    logger.info('Model: ' + getConfig().api.model + ', API: ' + getConfig().api.baseUrl);
+    logger.info('Pi Agent activated — model: ' + getConfig().api.model);
     logger.info('Tools: ' + manager.getToolRegistry().getAll().map(t => t.name).join(', '));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SLASH COMMAND HANDLER
+// ═══════════════════════════════════════════════════════════════
+async function handleSlashCommand(
+    command: string,
+    prompt: string,
+    stream: vscode.ChatResponseStream
+): Promise<vscode.ChatResult> {
+    const ctx = await buildContextString();
+
+    const getEditorCode = (): { code: string; lang: string } | null => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) return null;
+        const code = editor.document.getText(editor.selection) || editor.document.getText();
+        return { code, lang: editor.document.languageId };
+    };
+
+    switch (command) {
+        case 'explain': {
+            const ed = getEditorCode();
+            if (!ed || !ed.code) { stream.markdown('⚠️ No code selected. Select code in the editor first.'); return {}; }
+            stream.progress('Explaining code...');
+            await manager.processUserMessage('Explain this ' + ed.lang + ' code:\n```' + ed.lang + '\n' + ed.code + '\n```', ctx);
+            return {};
+        }
+        case 'fix': {
+            const ed = getEditorCode();
+            if (!ed || !ed.code) { stream.markdown('⚠️ No code selected.'); return {}; }
+            stream.progress('Analyzing code...');
+            await manager.processUserMessage('Fix errors in this ' + ed.lang + ' code:\n```' + ed.lang + '\n' + ed.code + '\n```', ctx);
+            return {};
+        }
+        case 'refactor': {
+            const ed = getEditorCode();
+            if (!ed || !ed.code) { stream.markdown('⚠️ No code selected.'); return {}; }
+            stream.progress('Refactoring...');
+            await manager.processUserMessage('Refactor this ' + ed.lang + ' code:\n```' + ed.lang + '\n' + ed.code + '\n```', ctx);
+            return {};
+        }
+        case 'test': {
+            const ed = getEditorCode();
+            if (!ed || !ed.code) { stream.markdown('⚠️ No code selected.'); return {}; }
+            stream.progress('Generating tests...');
+            await manager.processUserMessage('Generate tests for this ' + ed.lang + ' code:\n```' + ed.lang + '\n' + ed.code + '\n```', ctx);
+            return {};
+        }
+        case 'review': {
+            const ed = getEditorCode();
+            if (!ed || !ed.code) { stream.markdown('⚠️ No code selected.'); return {}; }
+            stream.progress('Reviewing code...');
+            await manager.processUserMessage('Review this ' + ed.lang + ' code for issues:\n```' + ed.lang + '\n' + ed.code + '\n```', ctx);
+            return {};
+        }
+        case 'commit': {
+            stream.progress('Generating commit message...');
+            await manager.processUserMessage('Generate a conventional commit message. Use git_status and git_diff_staged first.', ctx);
+            return {};
+        }
+        case 'plan': {
+            const enabled = manager.togglePlanMode();
+            stream.markdown('**Plan Mode:** ' + (enabled ? '✅ ON' : '❌ OFF') + '\n\n');
+            if (prompt.trim()) {
+                stream.progress('Creating plan...');
+                await manager.processUserMessage('Create a detailed step-by-step plan for: ' + prompt, ctx);
+            }
+            return {};
+        }
+        case 'scout': {
+            if (!prompt.trim()) { stream.markdown('Usage: `/scout <what to investigate>`'); return {}; }
+            stream.progress('Scouting...');
+            await manager.processAgentMessage('scout', prompt);
+            return {};
+        }
+        case 'research': {
+            if (!prompt.trim()) { stream.markdown('Usage: `/research <topic>`'); return {}; }
+            stream.progress('Researching...');
+            await manager.processAgentMessage('researcher', prompt);
+            return {};
+        }
+        case 'clear': {
+            manager.clearSession();
+            stream.markdown('✅ Session cleared.\n');
+            return {};
+        }
+        default: {
+            stream.markdown('Unknown command: `/' + command + '`\n\n');
+            stream.markdown(helpMarkdown());
+            return {};
+        }
+    }
+}
+
+function helpMarkdown(): string {
+    return [
+        '**Available Commands:**',
+        '',
+        '| Command | Description |',
+        '|---------|-------------|',
+        '| `/explain` | Explain selected code |',
+        '| `/fix` | Fix errors in selected code |',
+        '| `/refactor` | Refactor selected code |',
+        '| `/test` | Generate tests for selected code |',
+        '| `/review` | Review code for issues |',
+        '| `/commit` | Generate commit message |',
+        '| `/plan [task]` | Toggle plan mode |',
+        '| `/scout <query>` | Codebase reconnaissance |',
+        '| `/research <topic>` | Research a topic |',
+        '| `/clear` | Clear chat history |',
+        '',
+    ].join('\n');
 }
 
 function updateInlineCompletions(): void {
@@ -195,6 +372,6 @@ function updateInlineCompletions(): void {
 }
 
 export function deactivate() {
-    logger?.info('Pi Agent extension deactivated');
+    logger?.info('Pi Agent deactivated');
     manager?.stop();
 }

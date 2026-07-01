@@ -2,10 +2,10 @@
   "name": "pi-vscode-ext",
   "displayName": "Pi Agent",
   "description": "AI coding agent for VS Code — powered by Pi. GitHub Copilot-like experience with subagent orchestration, git tools, plan mode, and more.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "pi-agent",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.90.0"
   },
   "categories": [
     "AI",
@@ -22,179 +22,63 @@
     "chat",
     "pi"
   ],
+  "enabledApiProposals": ["chatParticipant"],
   "activationEvents": [],
   "main": "./out/extension.js",
   "icon": "images/icon.png",
   "contributes": {
     "chatParticipants": [
       {
-        "id": "pi.chat",
+        "id": "pi-agent.chat",
         "name": "pi",
         "fullName": "Pi Agent",
         "description": "AI coding agent — ask questions, generate code, run commands, manage git, and more.",
         "isSticky": true,
         "commands": [
-          {
-            "name": "explain",
-            "description": "Explain the selected code or file"
-          },
-          {
-            "name": "fix",
-            "description": "Fix errors in the selected code"
-          },
-          {
-            "name": "refactor",
-            "description": "Refactor the selected code"
-          },
-          {
-            "name": "test",
-            "description": "Generate tests for the selected code"
-          },
-          {
-            "name": "review",
-            "description": "Review code for issues and improvements"
-          },
-          {
-            "name": "commit",
-            "description": "Generate a commit message for staged changes"
-          },
-          {
-            "name": "plan",
-            "description": "Enter plan mode — read-only analysis with step tracking"
-          },
-          {
-            "name": "scout",
-            "description": "Fast codebase recon — find patterns and map architecture"
-          },
-          {
-            "name": "research",
-            "description": "Research a topic using web search"
-          }
+          { "name": "explain", "description": "Explain the selected code or file" },
+          { "name": "fix", "description": "Fix errors in the selected code" },
+          { "name": "refactor", "description": "Refactor the selected code" },
+          { "name": "test", "description": "Generate tests for the selected code" },
+          { "name": "review", "description": "Review code for issues and improvements" },
+          { "name": "commit", "description": "Generate a commit message for staged changes" },
+          { "name": "plan", "description": "Enter plan mode — create a step-by-step plan" },
+          { "name": "scout", "description": "Fast codebase recon — find patterns and map architecture" },
+          { "name": "research", "description": "Research a topic" },
+          { "name": "clear", "description": "Clear chat history" }
         ]
       }
     ],
     "commands": [
-      {
-        "command": "pi-agent.openChat",
-        "title": "Pi Agent: Open Chat",
-        "icon": "$(comment-discussion)"
-      },
-      {
-        "command": "pi-agent.explainCode",
-        "title": "Pi Agent: Explain Code",
-        "icon": "$(info)"
-      },
-      {
-        "command": "pi-agent.fixCode",
-        "title": "Pi Agent: Fix Code",
-        "icon": "$(wrench)"
-      },
-      {
-        "command": "pi-agent.refactorCode",
-        "title": "Pi Agent: Refactor Code",
-        "icon": "$(tools)"
-      },
-      {
-        "command": "pi-agent.generateTests",
-        "title": "Pi Agent: Generate Tests",
-        "icon": "$(beaker)"
-      },
-      {
-        "command": "pi-agent.reviewCode",
-        "title": "Pi Agent: Review Code",
-        "icon": "$(eye)"
-      },
-      {
-        "command": "pi-agent.generateCommitMessage",
-        "title": "Pi Agent: Generate Commit Message",
-        "icon": "$(git-commit)"
-      },
-      {
-        "command": "pi-agent.showChanges",
-        "title": "Pi Agent: Show File Changes",
-        "icon": "$(diff)"
-      },
-      {
-        "command": "pi-agent.planMode",
-        "title": "Pi Agent: Toggle Plan Mode",
-        "icon": "$(list-ordered)"
-      },
-      {
-        "command": "pi-agent.showContext",
-        "title": "Pi Agent: Show Context Usage",
-        "icon": "$(dashboard)"
-      },
-      {
-        "command": "pi-agent.newSession",
-        "title": "Pi Agent: New Session",
-        "icon": "$(add)"
-      },
-      {
-        "command": "pi-agent.toggleInlineSuggestions",
-        "title": "Pi Agent: Toggle Inline Suggestions",
-        "icon": "$(lightbulb)"
-      }
+      { "command": "pi-agent.explainCode", "title": "Pi Agent: Explain Code", "icon": "$(info)" },
+      { "command": "pi-agent.fixCode", "title": "Pi Agent: Fix Code", "icon": "$(wrench)" },
+      { "command": "pi-agent.refactorCode", "title": "Pi Agent: Refactor Code", "icon": "$(tools)" },
+      { "command": "pi-agent.generateTests", "title": "Pi Agent: Generate Tests", "icon": "$(beaker)" },
+      { "command": "pi-agent.reviewCode", "title": "Pi Agent: Review Code", "icon": "$(eye)" },
+      { "command": "pi-agent.generateCommitMessage", "title": "Pi Agent: Generate Commit Message", "icon": "$(git-commit)" },
+      { "command": "pi-agent.newSession", "title": "Pi Agent: New Session", "icon": "$(add)" },
+      { "command": "pi-agent.planMode", "title": "Pi Agent: Toggle Plan Mode", "icon": "$(list-ordered)" },
+      { "command": "pi-agent.toggleInlineSuggestions", "title": "Pi Agent: Toggle Inline Suggestions", "icon": "$(lightbulb)" },
+      { "command": "pi-agent.showContext", "title": "Pi Agent: Show Context Usage", "icon": "$(dashboard)" }
     ],
     "menus": {
       "editor/context": [
-        {
-          "command": "pi-agent.explainCode",
-          "when": "editorHasSelection",
-          "group": "pi-agent@1"
-        },
-        {
-          "command": "pi-agent.fixCode",
-          "when": "editorHasSelection",
-          "group": "pi-agent@2"
-        },
-        {
-          "command": "pi-agent.refactorCode",
-          "when": "editorHasSelection",
-          "group": "pi-agent@3"
-        },
-        {
-          "command": "pi-agent.generateTests",
-          "when": "editorHasSelection",
-          "group": "pi-agent@4"
-        },
-        {
-          "command": "pi-agent.reviewCode",
-          "when": "editorHasSelection",
-          "group": "pi-agent@5"
-        }
+        { "command": "pi-agent.explainCode", "when": "editorHasSelection", "group": "pi-agent@1" },
+        { "command": "pi-agent.fixCode", "when": "editorHasSelection", "group": "pi-agent@2" },
+        { "command": "pi-agent.refactorCode", "when": "editorHasSelection", "group": "pi-agent@3" },
+        { "command": "pi-agent.generateTests", "when": "editorHasSelection", "group": "pi-agent@4" },
+        { "command": "pi-agent.reviewCode", "when": "editorHasSelection", "group": "pi-agent@5" }
       ],
       "commandPalette": [
-        {
-          "command": "pi-agent.explainCode",
-          "when": "editorHasSelection"
-        }
-      ],
-      "view/title": [
-        {
-          "command": "pi-agent.newSession",
-          "when": "view == pi-agent.chatView",
-          "group": "navigation"
-        }
+        { "command": "pi-agent.explainCode", "when": "editorHasSelection" }
       ]
     },
     "viewsContainers": {
       "activitybar": [
-        {
-          "id": "pi-agent",
-          "title": "Pi Agent",
-          "icon": "images/icon.svg"
-        }
+        { "id": "pi-agent", "title": "Pi Agent", "icon": "images/icon.svg" }
       ]
     },
     "views": {
       "pi-agent": [
-        {
-          "type": "webview",
-          "id": "pi-agent.chatView",
-          "name": "Chat",
-          "icon": "images/icon.svg",
-          "contextualTitle": "Pi Agent Chat"
-        },
         {
           "type": "tree",
           "id": "pi-agent.agentsView",
@@ -241,7 +125,7 @@
         },
         "pi-agent.agent.maxTokens": {
           "type": "number",
-          "default": 4096,
+          "default": 16384,
           "description": "Maximum tokens for agent responses"
         },
         "pi-agent.agent.temperature": {
@@ -269,11 +153,6 @@
           "default": 4,
           "description": "Maximum concurrent subagent processes"
         },
-        "pi-agent.subagents.agentsDir": {
-          "type": "string",
-          "default": "",
-          "description": "Custom agents directory (defaults to ~/.pi/agent/agents)"
-        },
         "pi-agent.tools.enableBashGuard": {
           "type": "boolean",
           "default": true,
@@ -285,28 +164,19 @@
           "description": "Enable git toolkit tools"
         }
       }
-    },
-    "languages": [
-      {
-        "id": "pi-agent-log",
-        "aliases": [
-          "Pi Agent Log"
-        ]
-      }
-    ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
-    "package": "vsce package",
-    "test": "node ./out/test/runTest.js"
+    "package": "vsce package"
   },
   "devDependencies": {
     "@types/diff": "^5.0.0",
     "@types/node": "^20.0.0",
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "^1.90.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "@vscode/vsce": "^2.22.0",
