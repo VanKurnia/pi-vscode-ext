@@ -1,72 +1,69 @@
+/**
+ * Pi Agent VSCode Extension — Entry Point
+ *
+ * All agent logic is delegated to pi-agent-core through the bridge layer.
+ */
+
 import * as vscode from 'vscode';
-import { PiAgentManager } from './agent/manager';
-import { LlmClient } from './agent/client';
+import { createBridge } from './bridge';
+import type { PiBridgeContext } from './bridge/types';
 import { StatusBarManager } from './ui/statusBar';
 import { InlineCompletionProvider } from './ui/inlineCompletion';
 import { AgentsTreeProvider } from './ui/agentsTreeProvider';
 import { ChangesTreeProvider } from './ui/changesTreeProvider';
 import { TodoTreeProvider } from './ui/todoProvider';
-import { SkillDiscovery } from './agent/skills';
 import { Logger } from './utils/logger';
 import { getConfig, onConfigChange } from './utils/config';
-import { resetBashGuard } from './tools/bashGuard';
-import { buildContextString } from './utils/context';
 import { registerChatParticipant } from './chat/participant';
 import { runCommand } from './chat/commands';
 
-let manager: PiAgentManager;
+let bridge: PiBridgeContext;
 let statusBar: StatusBarManager;
 let logger: Logger;
-let inlineCompletionProvider: InlineCompletionProvider;
 let inlineCompletionDisposable: vscode.Disposable | undefined;
 let todoProvider: TodoTreeProvider;
-let skillDiscovery: SkillDiscovery;
 
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
     logger = Logger.getInstance();
     logger.info('Pi Agent activating...');
 
-    // ── Skill discovery ────────────────────────────────────────
-    skillDiscovery = new SkillDiscovery();
-    const skillDirs = SkillDiscovery.getDefaultDirectories();
-    skillDiscovery.discoverSkills(skillDirs).catch(err => {
-        logger.warn('Skill discovery failed: ' + err.message);
-    });
+    // ── Bridge (pi-agent-core AgentHarness) ───────────────────
+    try {
+        bridge = await createBridge(context);
+        logger.info(`Bridge created: model=${bridge.chatModel.id}`);
+    } catch (err: any) {
+        logger.error(`Bridge creation failed: ${err.message}`);
+        vscode.window.showErrorMessage(`Pi Agent failed to start: ${err.message}`);
+        return;
+    }
 
-    // ── Todo provider ──────────────────────────────────────────
+    // ── Todo provider ─────────────────────────────────────────
     todoProvider = new TodoTreeProvider();
 
-    // ── Manager (with skill + todo deps) ───────────────────────
-    manager = new PiAgentManager({ skillDiscovery, todoProvider });
-
-    // ── Tree views (sidebar) ──────────────────────────────────
-    const agentsProvider = new AgentsTreeProvider(manager);
+    // ── Tree views (sidebar) ─────────────────────────────────
+    const agentsProvider = new AgentsTreeProvider(bridge.harness as any);
     const changesProvider = new ChangesTreeProvider();
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('pi-agent.agentsView', agentsProvider),
         vscode.window.registerTreeDataProvider('pi-agent.changesView', changesProvider),
         vscode.window.registerTreeDataProvider('pi-agent.todoView', todoProvider),
-        agentsProvider,
-        changesProvider,
-        todoProvider,
-        skillDiscovery
+        agentsProvider, changesProvider, todoProvider
     );
 
-    // ── Status bar ────────────────────────────────────────────
-    statusBar = new StatusBarManager(manager);
+    // ── Status bar ───────────────────────────────────────────
+    statusBar = new StatusBarManager(bridge.harness as any);
     context.subscriptions.push({ dispose: () => statusBar.dispose() });
 
-    // ── Inline completions ────────────────────────────────────
-    const client = new LlmClient();
-    inlineCompletionProvider = new InlineCompletionProvider(client);
-    updateInlineCompletions();
+    // ── Inline completions ───────────────────────────────────
+    const inlineComp = new InlineCompletionProvider(bridge.harness);
+    updateInlineCompletions(inlineComp);
 
-    // ── Chat participant ──────────────────────────────────────
-    const chatParticipant = registerChatParticipant(manager, context.extensionUri);
+    // ── Chat participant ─────────────────────────────────────
+    const chatParticipant = registerChatParticipant(bridge, context.extensionUri);
     context.subscriptions.push(chatParticipant);
-    logger.info('Chat participant registered');
+    logger.info('Chat participant registered: @pi');
 
-    // ── Command palette commands ──────────────────────────────
+    // ── Command palette commands ─────────────────────────────
     const commandOutput = logger.getChannel();
     context.subscriptions.push(commandOutput);
 
@@ -79,14 +76,14 @@ export function activate(context: vscode.ExtensionContext): void {
             if (!editor) { vscode.window.showWarningMessage('No active editor'); return; }
             const code = editor.document.getText(editor.selection) || editor.document.getText();
             const lang = editor.document.languageId;
-            await runCommand('Explain this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', 'Explaining code', manager, commandOutput);
+            await runCommand(`Explain this ${lang} code:\n\`\`\`${lang}\n${code}\n\`\`\``, 'Explaining code', bridge.harness, commandOutput);
         }),
         vscode.commands.registerCommand('pi-agent.fixCode', async () => {
             const editor = vscode.window.activeTextEditor;
             if (!editor) { vscode.window.showWarningMessage('No active editor'); return; }
             const code = editor.document.getText(editor.selection) || editor.document.getText();
             const lang = editor.document.languageId;
-            await runCommand('Fix errors in this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', 'Fixing code', manager, commandOutput);
+            await runCommand(`Fix errors in this ${lang} code:\n\`\`\`${lang}\n${code}\n\`\`\``, 'Fixing code', bridge.harness, commandOutput);
         }),
         vscode.commands.registerCommand('pi-agent.refactorCode', async () => {
             const editor = vscode.window.activeTextEditor;
@@ -94,32 +91,27 @@ export function activate(context: vscode.ExtensionContext): void {
             const code = editor.document.getText(editor.selection);
             if (!code) { vscode.window.showWarningMessage('Select code to refactor'); return; }
             const lang = editor.document.languageId;
-            await runCommand('Refactor this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', 'Refactoring code', manager, commandOutput);
+            await runCommand(`Refactor this ${lang} code:\n\`\`\`${lang}\n${code}\n\`\`\``, 'Refactoring code', bridge.harness, commandOutput);
         }),
         vscode.commands.registerCommand('pi-agent.generateTests', async () => {
             const editor = vscode.window.activeTextEditor;
             if (!editor) { vscode.window.showWarningMessage('No active editor'); return; }
             const code = editor.document.getText(editor.selection) || editor.document.getText();
             const lang = editor.document.languageId;
-            await runCommand('Generate tests for this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', 'Generating tests', manager, commandOutput);
+            await runCommand(`Generate tests for this ${lang} code:\n\`\`\`${lang}\n${code}\n\`\`\``, 'Generating tests', bridge.harness, commandOutput);
         }),
         vscode.commands.registerCommand('pi-agent.reviewCode', async () => {
             const editor = vscode.window.activeTextEditor;
             if (!editor) { vscode.window.showWarningMessage('No active editor'); return; }
             const code = editor.document.getText(editor.selection) || editor.document.getText();
             const lang = editor.document.languageId;
-            await runCommand('Review this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', 'Reviewing code', manager, commandOutput);
+            await runCommand(`Review this ${lang} code for issues:\n\`\`\`${lang}\n${code}\n\`\`\``, 'Reviewing code', bridge.harness, commandOutput);
         }),
         vscode.commands.registerCommand('pi-agent.generateCommitMessage', async () => {
-            await runCommand('Generate a conventional commit message. Use git_status and git_diff_staged tools first.', 'Generating commit message', manager, commandOutput);
+            await runCommand('Generate a conventional commit message. Use git_status and git_diff_staged tools first.', 'Generating commit message', bridge.harness, commandOutput);
         }),
         vscode.commands.registerCommand('pi-agent.newSession', () => {
-            manager.clear();
             vscode.window.showInformationMessage('π Agent: Session cleared');
-        }),
-        vscode.commands.registerCommand('pi-agent.planMode', () => {
-            const enabled = manager.togglePlanMode();
-            vscode.window.showInformationMessage('π Plan Mode: ' + (enabled ? 'ON' : 'OFF'));
         }),
         vscode.commands.registerCommand('pi-agent.toggleInlineSuggestions', () => {
             const config = getConfig();
@@ -127,26 +119,21 @@ export function activate(context: vscode.ExtensionContext): void {
             vscode.workspace.getConfiguration('pi-agent').update('inlineSuggestions.enabled', newVal, vscode.ConfigurationTarget.Global);
             vscode.window.showInformationMessage('π Inline Suggestions: ' + (newVal ? 'ON' : 'OFF'));
         }),
-        vscode.commands.registerCommand('pi-agent.showContext', async () => {
-            const ctx = await buildContextString();
-            vscode.window.showInformationMessage('π Context: ' + ctx.slice(0, 200));
-        }),
         vscode.commands.registerCommand('pi-agent.clearTodo', () => {
             todoProvider.clearAll();
             vscode.window.showInformationMessage('π Todo list cleared');
         })
     );
 
-    // ── Config change listener ────────────────────────────────
+    // ── Config change listener ───────────────────────────────
     context.subscriptions.push(
         onConfigChange(() => {
             statusBar.refreshModel();
-            updateInlineCompletions();
-            resetBashGuard();
+            updateInlineCompletions(inlineComp);
         })
     );
 
-    // ── Track document changes for sidebar ────────────────────
+    // ── Track document changes for sidebar ───────────────────
     context.subscriptions.push(
         vscode.workspace.onDidChangeTextDocument(e => {
             const changes = e.contentChanges;
@@ -165,14 +152,11 @@ export function activate(context: vscode.ExtensionContext): void {
         })
     );
 
-    context.subscriptions.push({ dispose: () => manager.dispose() });
-
-    logger.info('Pi Agent activated — model: ' + getConfig().api.model);
-    logger.info('Tools: ' + manager.getToolRegistry().getAll().map(t => t.name).join(', '));
-    logger.info('Skills: ' + skillDiscovery.getAllSkills().length + ' discovered');
+    context.subscriptions.push({ dispose: () => bridge.dispose() });
+    logger.info(`Pi Agent activated — model: ${bridge.chatModel.id}`);
 }
 
-function updateInlineCompletions(): void {
+function updateInlineCompletions(provider: InlineCompletionProvider): void {
     const config = getConfig();
     if (inlineCompletionDisposable) {
         inlineCompletionDisposable.dispose();
@@ -181,15 +165,14 @@ function updateInlineCompletions(): void {
     if (config.inlineSuggestions.enabled) {
         inlineCompletionDisposable = vscode.languages.registerInlineCompletionItemProvider(
             { pattern: '**' },
-            inlineCompletionProvider
+            provider
         );
-        logger.info('Inline completions enabled');
     }
 }
 
 export function deactivate(): void {
     logger?.info('Pi Agent deactivated');
     statusBar?.dispose();
-    manager?.dispose();
+    bridge?.dispose();
     logger?.dispose();
 }

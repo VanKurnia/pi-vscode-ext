@@ -1,21 +1,11 @@
 /**
  * Bridge layer — exports for pi-agent-core ↔ VSCode integration.
- *
- * This module is the public API of the bridge layer. Import from here
- * to use the bridge in other parts of the extension.
- *
- * Usage:
- * ```ts
- * import { createBridge, readConfig } from './bridge';
- * const bridge = await createBridge(context);
- * const response = await bridge.harness.prompt('Hello!');
- * ```
  */
 
 // Harness factory
 export { createBridge, readConfig } from './pi-harness';
 
-// Provider bridge — model resolution and API key management
+// Provider bridge
 export {
     createModelFromSettings,
     resolveChatModel,
@@ -24,7 +14,7 @@ export {
     buildProviderConfig,
 } from './provider-bridge';
 
-// Session bridge — session management
+// Session bridge
 export {
     createSessionRepo,
     createSession,
@@ -34,6 +24,9 @@ export {
     deleteSession,
     getWorkspaceCwd,
 } from './session-bridge';
+
+// Stream bridge — harness events → VSCode ChatResponseStream
+export { streamFromHarness } from './stream-bridge';
 
 // Types
 export type {

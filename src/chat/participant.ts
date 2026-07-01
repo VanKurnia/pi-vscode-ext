@@ -1,89 +1,49 @@
-import * as vscode from 'vscode';
-import { PiAgentManager } from '../agent/manager';
-import { buildContextString } from '../utils/context';
-import { handleSlashCommand, helpMarkdown } from './commands';
-
 /**
- * Register the native VS Code ChatParticipant.
- * Returns the participant for disposal tracking.
+ * Chat Participant — native VS Code Chat integration via @pi.
+ *
+ * Uses pi-agent-core's AgentHarness through the bridge layer.
  */
+
+import * as vscode from 'vscode';
+import type { PiBridgeContext } from '../bridge/types';
+import { streamFromHarness } from '../bridge/stream-bridge';
+import { handleSlashCommand, helpMarkdown } from './commands';
+import { Logger } from '../utils/logger';
+
+const logger = Logger.getInstance();
+
 export function registerChatParticipant(
-    manager: PiAgentManager,
+    bridge: PiBridgeContext,
     extensionUri: vscode.Uri
 ): vscode.ChatParticipant {
     const chatParticipant = vscode.chat.createChatParticipant(
         'pi-agent.chat',
         async (
             request: vscode.ChatRequest,
-            chatContext: vscode.ChatContext,
+            _chatContext: vscode.ChatContext,
             stream: vscode.ChatResponseStream,
             token: vscode.CancellationToken
         ): Promise<vscode.ChatResult> => {
             const prompt = request.prompt;
 
-            // ── Slash commands ──────────────────────────────────
+            // Slash commands
             if (request.command) {
-                return await handleSlashCommand(request.command, prompt, stream, manager);
+                return await handleSlashCommand(request.command, prompt, stream, bridge.harness);
             }
 
-            // ── Regular message ─────────────────────────────────
+            // Empty message
             if (!prompt.trim()) {
                 stream.markdown('Type a message or use a command:\n\n');
                 stream.markdown(helpMarkdown());
                 return {};
             }
 
-            stream.progress('Thinking...');
-            const ctx = await buildContextString();
-
-            // Wire manager events to stream
-            const disposables: vscode.Disposable[] = [];
-
-            const eventHandler = (event: any) => {
-                switch (event.type) {
-                    case 'streamChunk':
-                        if (event.data.content) {
-                            stream.markdown(event.data.content);
-                        }
-                        break;
-                    case 'toolCall': {
-                        const name = event.data.name;
-                        const args = event.data.arguments;
-                        stream.markdown('\n\n⚡ **`' + name + '`**');
-                        if (args) {
-                            const argsStr = typeof args === 'string' ? args : JSON.stringify(args, null, 2);
-                            if (argsStr.length < 200) {
-                                stream.markdown(' `' + argsStr.replace(/\n/g, ' ').slice(0, 100) + '`');
-                            }
-                        }
-                        stream.markdown('\n');
-                        break;
-                    }
-                    case 'toolResult': {
-                        if (event.data.isError) {
-                            stream.markdown('  ❌ Error: ' + (typeof event.data.isError === 'string' ? event.data.isError : 'Tool failed') + '\n');
-                        } else {
-                            stream.markdown('  ✅\n');
-                        }
-                        break;
-                    }
-                    case 'error':
-                        stream.markdown('\n\n❌ **Error:** ' + event.data.message + '\n');
-                        break;
-                }
-            };
-            manager.on('event', eventHandler);
-            disposables.push({ dispose: () => { manager.removeListener('event', eventHandler); } });
-
+            // Regular message → AgentHarness
+            logger.info(`[chat] User message: ${prompt.slice(0, 100)}`);
             try {
-                // Handle abort
-                token.onCancellationRequested(() => { manager.stop(); });
-
-                await manager.processUserMessage(prompt, ctx);
+                await streamFromHarness(bridge.harness, prompt, stream, token);
             } catch (err: any) {
-                stream.markdown('\n\n❌ **Error:** ' + err.message + '\n');
-            } finally {
-                disposables.forEach(d => d.dispose());
+                logger.error(`[chat] Error: ${err.message}`);
             }
 
             return {};
@@ -92,17 +52,17 @@ export function registerChatParticipant(
 
     chatParticipant.iconPath = vscode.Uri.joinPath(extensionUri, 'images', 'icon.svg');
 
-    // Followup suggestions after each response
     chatParticipant.followupProvider = {
-        provideFollowups(_result: vscode.ChatResult, _ctx: vscode.ChatContext, _token: vscode.CancellationToken): vscode.ChatFollowup[] {
+        provideFollowups(): vscode.ChatFollowup[] {
             return [
                 { prompt: '/fix', label: '🔧 Fix issues', command: 'fix' },
                 { prompt: '/refactor', label: '♻️ Refactor', command: 'refactor' },
                 { prompt: '/test', label: '🧪 Generate tests', command: 'test' },
                 { prompt: '/review', label: '👁️ Review code', command: 'review' },
             ];
-        }
+        },
     };
 
+    logger.info('[chat] ChatParticipant registered: @pi');
     return chatParticipant;
 }
