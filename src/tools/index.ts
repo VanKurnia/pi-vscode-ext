@@ -15,6 +15,10 @@ import { Session } from '../agent/session';
 import { createDbTools } from './dbTools';
 import { createSkillTools } from './skillTools';
 import { createTodoTool } from './todoTool';
+import { createCommitTools } from './commitTools';
+import { createFuzzyFindTool, createFuzzyOpenTool } from './fuzzyFind';
+import { createDiffReviewTools } from './diffReview';
+import { createBrowserTools } from './browser';
 import { SkillDiscovery } from '../agent/skills';
 import { TodoTreeProvider } from '../ui/todoProvider';
 
@@ -82,5 +86,24 @@ export function registerAllTools(
     // Todo tool
     if (options?.todoProvider) {
         registry.register(createTodoTool(options.todoProvider));
+    }
+
+    // Commit tools (generate commit message, review, diff prompt)
+    for (const tool of createCommitTools()) {
+        registry.register(tool);
+    }
+
+    // Fuzzy find tools
+    registry.register(createFuzzyFindTool());
+    registry.register(createFuzzyOpenTool());
+
+    // Diff review tools
+    for (const tool of createDiffReviewTools()) {
+        registry.register(tool);
+    }
+
+    // Browser tools
+    for (const tool of createBrowserTools()) {
+        registry.register(tool);
     }
 }

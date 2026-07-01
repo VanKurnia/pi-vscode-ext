@@ -64,7 +64,7 @@ function inferCommitType(diff: string): { type: string; scope: string; descripti
 
     // Infer scope from directory
     const dirs = filesChanged.map(f => path.dirname(f).split('/')[0]).filter(d => d && d !== '.');
-    const uniqueDirs = [...new Set(dirs)];
+    const uniqueDirs = Array.from(new Set(dirs));
     if (uniqueDirs.length === 1) scope = uniqueDirs[0];
     else if (uniqueDirs.length <= 3) scope = uniqueDirs.join(', ');
 
