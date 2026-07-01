@@ -9,14 +9,35 @@ import { getConfig } from '../utils/config';
 import { Logger } from '../utils/logger';
 import { registerAllTools } from '../tools';
 
-export type AgentEvent = 'userMessage' | 'assistantMessage' | 'toolCall' | 'toolResult' | 'streamStart' | 'streamChunk' | 'streamEnd' | 'error' | 'clear' | 'status';
+// ═══════════════════════════════════════════════════════════════
+// TYPES — AgentEvent map for type-safe events
+// ═══════════════════════════════════════════════════════════════
 
-export interface AgentEventData {
-    type: AgentEvent;
-    data: any;
+export interface AgentEventMap {
+    userMessage: { content: string };
+    assistantMessage: { content: string; agent?: string };
+    toolCall: { id?: string; name: string; arguments: any };
+    toolResult: { id?: string; name: string; content: string; isError?: boolean };
+    streamStart: {};
+    streamChunk: { content: string };
+    streamEnd: {};
+    error: { message: string };
+    clear: {};
+    status: { status: 'thinking' | 'streaming' | 'executing' | 'compacting' | 'idle'; agent?: string };
+    compaction: { summary: string; droppedCount: number };
 }
 
-/** Summarization system prompt (pi-compatible) */
+export type AgentEvent = keyof AgentEventMap;
+
+export interface AgentEventData<K extends AgentEvent = AgentEvent> {
+    type: K;
+    data: AgentEventMap[K];
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SUMMARIZATION PROMPT (pi-compatible)
+// ═══════════════════════════════════════════════════════════════
+
 const SUMMARIZATION_SYSTEM_PROMPT = `You are a conversation summarizer. Create a structured summary of this conversation.
 
 Use this EXACT format:
@@ -25,33 +46,64 @@ Use this EXACT format:
 [What was the user trying to accomplish?]
 
 ## Constraints & Preferences
-- [Any constraints, preferences, or requirements mentioned]
-- [Or "(none)" if none were mentioned]
+|- [Any constraints, preferences, or requirements mentioned]
+|- [Or "(none)" if none were mentioned]
 
 ## Progress
 ### Done
-- [x] [Completed tasks/changes]
+|- [x] [Completed tasks/changes]
 
 ### In Progress
-- [ ] [Work that was started but not finished]
+|- [ ] [Work that was started but not finished]
 
 ### Blocked
-- [Issues preventing progress, if any]
+|- [Issues preventing progress, if any]
 
 ## Key Decisions
-- **[Decision]**: [Brief rationale]
+|- **[Decision]**: [Brief rationale]
 
 ## Files
 ### Read
-- [list of files that were read]
+|- [list of files that were read]
 
 ### Modified
-- [list of files that were modified/created]
+|- [list of files that were modified/created]
 
 ## Next Steps
 1. [What should happen next to continue this work]
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+
+// ═══════════════════════════════════════════════════════════════
+// ToolLoopOptions — unified configuration for runToolLoop
+// ═══════════════════════════════════════════════════════════════
+
+interface ToolLoopOptions {
+    /** Session to use for message history */
+    session: Session;
+    /** Tools available for this loop (function definitions) */
+    tools: any[];
+    /** Model override */
+    model?: string;
+    /** Maximum iterations */
+    maxIterations: number;
+    /** Whether to use streaming (main agent) or non-streaming (named agents) */
+    stream: boolean;
+    /** Callback for streaming chunks */
+    onChunk?: (content: string) => void;
+    /** Optional agent name for named agents */
+    agentName?: string;
+    /** Check and perform compaction between iterations */
+    checkCompaction?: boolean;
+    /** Drain steering messages between turns */
+    drainSteering?: () => string[];
+    /** Maximum tokens for non-streaming calls */
+    maxTokens?: number;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PiAgentManager
+// ═══════════════════════════════════════════════════════════════
 
 export class PiAgentManager extends EventEmitter implements Disposable {
     private client: LlmClient;
@@ -70,7 +122,7 @@ export class PiAgentManager extends EventEmitter implements Disposable {
         this.client = new LlmClient();
         this.toolRegistry = new ToolRegistry();
         const config = getConfig();
-        this.session = new Session(buildSystemPrompt());
+        this.session = new Session(buildSystemPrompt(this.toolRegistry));
         registerAllTools(this.toolRegistry, this.client, () => this.session);
         this.refreshAgents();
 
@@ -115,7 +167,147 @@ export class PiAgentManager extends EventEmitter implements Disposable {
         return msgs;
     }
 
-    emitEvent(type: AgentEvent, data: any): void { this.emit('event', { type, data } as AgentEventData); }
+    emitEvent<K extends AgentEvent>(type: K, data: AgentEventMap[K]): void {
+        this.emit('event', { type, data } as AgentEventData<K>);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // UNIFIED TOOL LOOP — single source of truth for agent iteration
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Unified tool execution loop. Both the main chat agent and named agents
+     * (scout, researcher, worker) use this single loop implementation.
+     *
+     * Pattern: llm-call → parse response → execute tools → add results → loop
+     *
+     * @returns The final assistant message (text content only), or null if loop
+     *          was aborted or produced no text output.
+     */
+    private async runToolLoop(options: ToolLoopOptions): Promise<string | null> {
+        const config = getConfig();
+        let iterations = 0;
+        let hasMoreToolCalls = true;
+        let lastContent: string | null = null;
+
+        while (hasMoreToolCalls && iterations < options.maxIterations) {
+            iterations++;
+
+            // Check if compaction is needed (main agent only)
+            if (options.checkCompaction && this.session.needsCompaction(config.agent.maxTokens * 3, 16384)) {
+                await this.performCompaction();
+            }
+
+            const signal = this.abortController?.signal;
+
+            if (options.stream) {
+                // ─── STREAMING PATH (main agent) ──────────────────────
+                this.emitEvent('streamStart', {});
+                const response = await this.client.streamCompletion(
+                    options.session.getMessagesForApi(),
+                    {
+                        tools: options.tools.length > 0 ? options.tools : undefined,
+                        model: options.model || (this.planMode ? config.api.chatModel : undefined),
+                    },
+                    (chunk: any) => {
+                        const delta = chunk.choices?.[0]?.delta;
+                        if (delta?.content) {
+                            this.emitEvent('streamChunk', { content: delta.content });
+                        }
+                        if (delta?.tool_calls) {
+                            this.emitEvent('streamChunk', { content: '' }); // keep-alive
+                        }
+                    },
+                    signal
+                );
+                this.emitEvent('streamEnd', {});
+
+                const msg = response.choices?.[0]?.message;
+                const finishReason = response.choices?.[0]?.finish_reason;
+                const usage = response.usage;
+
+                const tokenUsage: TokenUsage | undefined = usage ? {
+                    input: usage.prompt_tokens || 0,
+                    output: usage.completion_tokens || 0,
+                    cacheRead: usage.prompt_tokens_details?.cached_tokens || 0,
+                    cacheWrite: 0,
+                    totalTokens: usage.total_tokens || 0,
+                } : undefined;
+
+                // Content already streamed via delta chunks — don't re-emit
+                options.session.addAssistantMessage(
+                    msg?.content || null,
+                    msg?.tool_calls || undefined,
+                    tokenUsage,
+                    finishReason || undefined
+                );
+
+                if (msg?.content) {
+                    lastContent = msg.content;
+                    this.emitEvent('assistantMessage', { content: msg.content });
+                }
+
+                if (finishReason === 'tool_calls' && msg?.tool_calls && msg.tool_calls.length > 0) {
+                    const shouldTerminate = await this.executeToolCalls(msg.tool_calls, options.session);
+                    hasMoreToolCalls = !shouldTerminate;
+                } else {
+                    hasMoreToolCalls = false;
+                }
+
+                // Check for steering messages between turns (main agent only)
+                if (options.drainSteering) {
+                    const pending = options.drainSteering();
+                    if (pending.length > 0) {
+                        for (const pendingMsg of pending) {
+                            options.session.addUserMessage(pendingMsg);
+                            this.emitEvent('userMessage', { content: pendingMsg });
+                        }
+                        hasMoreToolCalls = true; // continue loop
+                    }
+                }
+            } else {
+                // ─── NON-STREAMING PATH (named agents) ────────────────
+                const response = await this.client.chatCompletion(
+                    options.session.getMessagesForApi(),
+                    {
+                        model: options.model || config.api.model,
+                        tools: options.tools.length > 0 ? options.tools : undefined,
+                        maxTokens: options.maxTokens || 4096,
+                    }
+                );
+                const msg = response.choices?.[0]?.message;
+                if (!msg) break;
+
+                options.session.addAssistantMessage(msg.content || null, msg.tool_calls || undefined);
+
+                if (msg.tool_calls && msg.tool_calls.length > 0) {
+                    for (const tc of msg.tool_calls) {
+                        const fn = tc.function;
+                        let toolArgs: any;
+                        try { toolArgs = JSON.parse(fn.arguments || '{}'); } catch { toolArgs = {}; }
+                        this.emitEvent('toolCall', { id: tc.id, name: fn.name, arguments: toolArgs });
+
+                        const result = await this.toolRegistry.executeTool(fn.name, toolArgs, signal);
+                        options.session.addToolResult(tc.id, fn.name, result.content);
+                        this.emitEvent('toolResult', { id: tc.id, name: fn.name, content: result.content, isError: result.isError });
+                    }
+                    hasMoreToolCalls = true;
+                } else {
+                    hasMoreToolCalls = false;
+                    if (msg.content) {
+                        lastContent = msg.content;
+                        this.emitEvent('assistantMessage', { content: msg.content, agent: options.agentName });
+                    }
+                }
+            }
+        }
+
+        return lastContent;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // PUBLIC ENTRY POINTS
+    // ═══════════════════════════════════════════════════════════════
 
     async processUserMessage(content: string, context?: string): Promise<void> {
         if (this.isProcessing) { this.emitEvent('error', { message: 'Already processing a message. Please wait.' }); return; }
@@ -127,7 +319,16 @@ export class PiAgentManager extends EventEmitter implements Disposable {
             const fullContent = context ? content + '\n\n---\nWorkspace Context:\n' + context : content;
             this.session.addUserMessage(fullContent);
             this.emitEvent('userMessage', { content });
-            await this.agentLoop();
+
+            const tools = this.toolRegistry.toFunctionDefinitions();
+            await this.runToolLoop({
+                session: this.session,
+                tools,
+                maxIterations: 15,
+                stream: true,
+                checkCompaction: true,
+                drainSteering: () => this.drainPendingMessages(),
+            });
         } catch (err: any) {
             if (err.name === 'AbortError' || err.message === 'Aborted') {
                 this.emitEvent('assistantMessage', { content: '*[Stopped by user]*' });
@@ -148,7 +349,7 @@ export class PiAgentManager extends EventEmitter implements Disposable {
         if (!agent) { this.emitEvent('error', { message: 'Agent not found: ' + agentName }); return; }
         const config = getConfig();
         const model = resolveModel(agent.model) || config.api.model;
-        const agentSession = new Session(agent.systemPrompt || buildSystemPrompt());
+        const agentSession = new Session(agent.systemPrompt || buildSystemPrompt(this.toolRegistry));
         agentSession.addUserMessage(task);
         this.isProcessing = true;
         this.abortController = new AbortController();
@@ -158,41 +359,16 @@ export class PiAgentManager extends EventEmitter implements Disposable {
         try {
             const toolNames = agent.tools.length > 0 ? agent.tools : undefined;
             const tools = this.toolRegistry.toFunctionDefinitions(toolNames);
-            const maxIterations = 10;
-            let iterations = 0;
-            let hasMoreToolCalls = true;
 
-            while (hasMoreToolCalls && iterations < maxIterations) {
-                iterations++;
-                const response = await this.client.chatCompletion(
-                    agentSession.getMessagesForApi(),
-                    { model, tools: tools.length > 0 ? tools : undefined, maxTokens: 4096 }
-                );
-                const msg = response.choices?.[0]?.message;
-                if (!msg) break;
-
-                agentSession.addAssistantMessage(msg.content || null, msg.tool_calls || undefined);
-
-                if (msg.tool_calls && msg.tool_calls.length > 0) {
-                    // Execute tool calls for the agent (pi-compatible tool loop)
-                    for (const tc of msg.tool_calls) {
-                        const fn = tc.function;
-                        let toolArgs: any;
-                        try { toolArgs = JSON.parse(fn.arguments || '{}'); } catch { toolArgs = {}; }
-                        this.emitEvent('toolCall', { id: tc.id, name: fn.name, arguments: toolArgs });
-
-                        const result = await this.toolRegistry.executeTool(fn.name, toolArgs, this.abortController?.signal);
-                        agentSession.addToolResult(tc.id, fn.name, result.content);
-                        this.emitEvent('toolResult', { id: tc.id, name: fn.name, content: result.content, isError: result.isError });
-                    }
-                    hasMoreToolCalls = true;
-                } else {
-                    hasMoreToolCalls = false;
-                    if (msg.content) {
-                        this.emitEvent('assistantMessage', { content: msg.content, agent: agentName });
-                    }
-                }
-            }
+            await this.runToolLoop({
+                session: agentSession,
+                tools,
+                model,
+                maxIterations: 10,
+                stream: false,
+                agentName,
+                maxTokens: 4096,
+            });
         } catch (err: any) {
             if (err.name === 'AbortError' || err.message === 'Aborted') {
                 this.emitEvent('assistantMessage', { content: '*[' + agentName + ' stopped by user]*' });
@@ -207,90 +383,14 @@ export class PiAgentManager extends EventEmitter implements Disposable {
         }
     }
 
-    private async agentLoop(maxIterations: number = 15): Promise<void> {
-        const config = getConfig();
-        let iterations = 0;
-        let hasMoreToolCalls = true;
+    // ═══════════════════════════════════════════════════════════════
+    // TOOL EXECUTION — pi-compatible sequential/parallel batching
+    // ═══════════════════════════════════════════════════════════════
 
-        while (hasMoreToolCalls && iterations < maxIterations) {
-            iterations++;
-
-            // Check if compaction is needed (pi-compatible)
-            if (this.session.needsCompaction(config.agent.maxTokens * 3, 16384)) {
-                await this.performCompaction();
-            }
-
-            this.emitEvent('streamStart', {});
-            const tools = this.toolRegistry.toFunctionDefinitions();
-            const response = await this.client.streamCompletion(
-                this.session.getMessagesForApi(),
-                {
-                    tools: tools.length > 0 ? tools : undefined,
-                    model: this.planMode ? config.api.chatModel : undefined,
-                },
-                (chunk: any) => {
-                    const delta = chunk.choices?.[0]?.delta;
-                    if (delta?.content) {
-                        this.emitEvent('streamChunk', { content: delta.content });
-                    }
-                    if (delta?.tool_calls) {
-                        this.emitEvent('streamChunk', { content: '' }); // keep-alive
-                    }
-                },
-                this.abortController?.signal
-            );
-            this.emitEvent('streamEnd', {});
-
-            const msg = response.choices?.[0]?.message;
-            const finishReason = response.choices?.[0]?.finish_reason;
-            const usage = response.usage;
-
-            // Extract token usage (pi-compatible)
-            const tokenUsage: TokenUsage | undefined = usage ? {
-                input: usage.prompt_tokens || 0,
-                output: usage.completion_tokens || 0,
-                cacheRead: usage.prompt_tokens_details?.cached_tokens || 0,
-                cacheWrite: 0,
-                totalTokens: usage.total_tokens || 0,
-            } : undefined;
-
-            // Note: content was already streamed via delta chunks above — don't re-emit.
-            this.session.addAssistantMessage(
-                msg?.content || null,
-                msg?.tool_calls || undefined,
-                tokenUsage,
-                finishReason || undefined
-            );
-
-            if (msg?.content) {
-                this.emitEvent('assistantMessage', { content: msg.content });
-            }
-
-            if (finishReason === 'tool_calls' && msg?.tool_calls && msg.tool_calls.length > 0) {
-                const shouldTerminate = await this.executeToolCalls(msg.tool_calls);
-                hasMoreToolCalls = !shouldTerminate;
-            } else {
-                hasMoreToolCalls = false;
-            }
-
-            // Check for steering messages between turns (pi-compatible)
-            const pending = this.drainPendingMessages();
-            if (pending.length > 0) {
-                for (const pendingMsg of pending) {
-                    this.session.addUserMessage(pendingMsg);
-                    this.emitEvent('userMessage', { content: pendingMsg });
-                }
-                hasMoreToolCalls = true; // continue loop
-            }
-        }
-    }
-
-    private async executeToolCalls(toolCalls: any[]): Promise<boolean> {
-        // Group tool calls: sequential tools run one-at-a-time, parallel tools run concurrently (pi-compatible)
+    private async executeToolCalls(toolCalls: any[], session: Session): Promise<boolean> {
         const signal = this.abortController?.signal;
         let shouldTerminate = false;
 
-        // Parse all tool calls and determine their execution mode
         const parsed = toolCalls.map(tc => {
             const fn = tc.function;
             if (!fn) return null;
@@ -300,7 +400,6 @@ export class PiAgentManager extends EventEmitter implements Disposable {
             return { tc, fn, args, tool, mode: tool?.executionMode || 'sequential' };
         }).filter(Boolean) as Array<{ tc: any; fn: any; args: any; tool: any; mode: string }>;
 
-        // Execute: sequential tools one by one, parallel tools as a batch
         let i = 0;
         while (i < parsed.length) {
             if (signal?.aborted) break;
@@ -308,19 +407,15 @@ export class PiAgentManager extends EventEmitter implements Disposable {
             const item = parsed[i];
 
             if (item.mode === 'parallel') {
-                // Collect all consecutive parallel tools into one batch
                 const batch: typeof parsed = [];
                 while (i < parsed.length && parsed[i].mode === 'parallel') {
                     batch.push(parsed[i]);
                     i++;
                 }
 
-                // Execute entire batch concurrently
                 const results = await Promise.allSettled(batch.map(async (item) => {
                     this.emitEvent('toolCall', { id: item.tc.id, name: item.fn.name, arguments: item.args });
-                    if (!item.tool) {
-                        throw new Error(`Tool not found: ${item.fn.name}`);
-                    }
+                    if (!item.tool) { throw new Error(`Tool not found: ${item.fn.name}`); }
                     const result = await item.tool.execute(item.args, signal);
                     return { item, result };
                 }));
@@ -331,22 +426,21 @@ export class PiAgentManager extends EventEmitter implements Disposable {
                         const content = typeof result === 'string' ? result : (result?.content || JSON.stringify(result));
                         const isError = typeof result === 'object' && result?.isError;
                         if (typeof result === 'object' && result?.terminate) { shouldTerminate = true; }
-                        this.session.addToolResult(it.tc.id, it.fn.name, content);
+                        session.addToolResult(it.tc.id, it.fn.name, content);
                         this.emitEvent('toolResult', { id: it.tc.id, name: it.fn.name, content, isError });
                     } else {
                         const it = batch[results.indexOf(settled)];
                         const errorContent = `Tool error: ${settled.reason?.message || 'unknown'}`;
-                        this.session.addToolResult(it.tc.id, it.fn.name, errorContent);
+                        session.addToolResult(it.tc.id, it.fn.name, errorContent);
                         this.emitEvent('toolResult', { id: it.tc.id, name: it.fn.name, content: errorContent, isError: true });
                     }
                 }
             } else {
-                // Sequential: execute one tool at a time
                 this.emitEvent('toolCall', { id: item.tc.id, name: item.fn.name, arguments: item.args });
 
                 if (!item.tool) {
                     const errorContent = `Tool not found: ${item.fn.name}`;
-                    this.session.addToolResult(item.tc.id, item.fn.name, errorContent);
+                    session.addToolResult(item.tc.id, item.fn.name, errorContent);
                     this.emitEvent('toolResult', { id: item.tc.id, name: item.fn.name, content: errorContent, isError: true });
                     i++;
                     continue;
@@ -357,11 +451,11 @@ export class PiAgentManager extends EventEmitter implements Disposable {
                     const content = typeof result === 'string' ? result : (result?.content || JSON.stringify(result));
                     const isError = typeof result === 'object' && result?.isError;
                     if (typeof result === 'object' && result?.terminate) { shouldTerminate = true; }
-                    this.session.addToolResult(item.tc.id, item.fn.name, content);
+                    session.addToolResult(item.tc.id, item.fn.name, content);
                     this.emitEvent('toolResult', { id: item.tc.id, name: item.fn.name, content, isError });
                 } catch (err: any) {
                     const errorContent = `Tool error: ${err.message}`;
-                    this.session.addToolResult(item.tc.id, item.fn.name, errorContent);
+                    session.addToolResult(item.tc.id, item.fn.name, errorContent);
                     this.emitEvent('toolResult', { id: item.tc.id, name: item.fn.name, content: errorContent, isError: true });
                 }
                 i++;
@@ -371,12 +465,13 @@ export class PiAgentManager extends EventEmitter implements Disposable {
         return shouldTerminate;
     }
 
-    /**
-     * LLM-based compaction (pi-compatible).
-     * Serializes conversation, sends to LLM for summarization, replaces old messages.
-     */
+    // ═══════════════════════════════════════════════════════════════
+    // COMPACTION — LLM-based summarization (pi-compatible)
+    // ═══════════════════════════════════════════════════════════════
+
     private async performCompaction(): Promise<void> {
         this.logger.info('Performing LLM-based compaction...');
+        this.emitEvent('status', { status: 'compacting' });
         try {
             const conversation = this.session.serializeForCompaction(2000);
             const summaryPrompt = `${SUMMARIZATION_SYSTEM_PROMPT}\n\nConversation to summarize:\n\n${conversation}`;
@@ -390,19 +485,22 @@ export class PiAgentManager extends EventEmitter implements Disposable {
             const summary = summaryResponse.choices?.[0]?.message?.content;
             if (summary) {
                 this.session.applyCompaction(summary, 10);
+                this.emitEvent('compaction', { summary, droppedCount: 10 });
                 this.logger.info('Compaction complete: summary injected');
             } else {
-                // Fallback to simple truncation
                 this.session.truncateToTokenLimit(config.agent.maxTokens * 2);
                 this.logger.warn('LLM compaction returned no summary, used truncation fallback');
             }
         } catch (err: any) {
-            // Fallback to simple truncation on error
             const config = getConfig();
             this.session.truncateToTokenLimit(config.agent.maxTokens * 2);
             this.logger.warn('LLM compaction failed (' + err.message + '), used truncation fallback');
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // LIFECYCLE
+    // ═══════════════════════════════════════════════════════════════
 
     stop(): void {
         if (this.abortController) { this.abortController.abort(); }

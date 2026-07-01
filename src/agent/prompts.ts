@@ -1,4 +1,5 @@
 import { getConfig } from '../utils/config';
+import type { ToolRegistry } from './tools';
 
 export const DEFAULT_SYSTEM_PROMPT = `You are Pi Agent, an expert AI coding assistant running inside VS Code. You help users write, understand, debug, refactor, and review code.
 
@@ -46,16 +47,38 @@ You have the following tools:
 8. Handle errors gracefully — if a tool fails, explain why and try alternatives.
 9. Be thorough but concise. Prefer showing over telling.`;
 
-export function buildSystemPrompt(context?: string): string {
+/**
+ * Build system prompt. If toolRegistry is provided, generates tool docs
+ * dynamically from registered tools (always in sync). Otherwise uses
+ * the static DEFAULT_SYSTEM_PROMPT as fallback.
+ */
+export function buildSystemPrompt(toolRegistryOrContext?: ToolRegistry | string, context?: string): string {
     const config = getConfig();
     let prompt = DEFAULT_SYSTEM_PROMPT;
+
+    // Dynamic tool docs from registry (always in sync with registered tools)
+    if (toolRegistryOrContext && typeof toolRegistryOrContext !== 'string' && 'getAll' in toolRegistryOrContext) {
+        const registry = toolRegistryOrContext as ToolRegistry;
+        const tools = registry.getAll();
+        const toolDocs = tools.map(t => {
+            const snippet = t.promptSnippet || t.description.split('.')[0];
+            const guidelines = t.promptGuidelines?.map(g => '  - ' + g).join('\n') || '';
+            return `- **${t.name}** — ${snippet}${guidelines ? '\n' + guidelines : ''}`;
+        }).join('\n');
+        prompt = prompt.replace(
+            /## Available Tools\n[\s\S]*?(?=\n## )/,
+            `## Available Tools\nYou have the following tools:\n${toolDocs}\n\n`
+        );
+    }
+
+    const ctx = typeof toolRegistryOrContext === 'string' ? toolRegistryOrContext : context;
 
     if (config.agent.systemPrompt) {
         prompt += '\n\n## Custom Instructions\n' + config.agent.systemPrompt;
     }
 
-    if (context) {
-        prompt += '\n\n## Current Context\n' + context;
+    if (ctx) {
+        prompt += '\n\n## Current Context\n' + ctx;
     }
 
     return prompt;
