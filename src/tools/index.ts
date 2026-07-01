@@ -35,8 +35,8 @@ export function registerAllTools(registry: ToolRegistry, client?: LlmClient): vo
     registry.register(createDiagnosticsTool());
     registry.register(createGetOpenEditorsTool());
 
-    // Subagent (needs LlmClient)
+    // Subagent (needs LlmClient + toolRegistry for tool access)
     if (client) {
-        registry.register(createSubagentTool(client));
+        registry.register(createSubagentTool(client, registry));
     }
 }

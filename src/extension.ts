@@ -143,31 +143,69 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(chatParticipant);
     logger.info('Chat participant registered');
 
+    // Output channel for standalone command results
+    const commandOutput = vscode.window.createOutputChannel('Pi Agent');
+    context.subscriptions.push(commandOutput);
+
+    // Helper: run a prompt and show output in a notification
+    async function runCommand(prompt: string, label: string) {
+        commandOutput.clear();
+        commandOutput.appendLine('⏳ ' + label + '...\n');
+
+        // Wire events to output channel
+        const handler = (event: any) => {
+            switch (event.type) {
+                case 'streamChunk':
+                    if (event.data.content) { commandOutput.append(event.data.content); }
+                    break;
+                case 'toolCall':
+                    commandOutput.appendLine('\n⚡ Tool: ' + event.data.name);
+                    break;
+                case 'toolResult':
+                    commandOutput.appendLine(event.data.error ? '  ❌ Error' : '  ✅ Done');
+                    break;
+                case 'assistantMessage':
+                    if (event.data.content) { commandOutput.appendLine('\n' + event.data.content); }
+                    break;
+                case 'error':
+                    commandOutput.appendLine('\n❌ Error: ' + event.data.message);
+                    break;
+            }
+        };
+        manager.on('event', handler);
+
+        await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: 'π ' + label },
+            async () => {
+                await manager.processUserMessage(prompt, await buildContextString());
+            }
+        );
+
+        manager.removeListener('event', handler);
+        commandOutput.appendLine('\n✅ Done. View full output: Pi Agent channel');
+        commandOutput.show(true);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // COMMANDS
     // ═══════════════════════════════════════════════════════════════
     context.subscriptions.push(
+        vscode.commands.registerCommand('pi-agent.openChat', () => {
+            vscode.commands.executeCommand('workbench.action.chat.open', '@pi');
+        }),
         vscode.commands.registerCommand('pi-agent.explainCode', async () => {
             const editor = vscode.window.activeTextEditor;
             if (!editor) { vscode.window.showWarningMessage('No active editor'); return; }
             const code = editor.document.getText(editor.selection) || editor.document.getText();
             const lang = editor.document.languageId;
-            await vscode.commands.executeCommand('workbench.action.chat.open', 'Ask Pi Agent');
-            // Fallback: process directly
-            await manager.processUserMessage(
-                '/explain ' + lang + ':\n```' + lang + '\n' + code + '\n```',
-                await buildContextString()
-            );
+            await runCommand('Explain this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', 'Explaining code');
         }),
         vscode.commands.registerCommand('pi-agent.fixCode', async () => {
             const editor = vscode.window.activeTextEditor;
             if (!editor) { vscode.window.showWarningMessage('No active editor'); return; }
             const code = editor.document.getText(editor.selection) || editor.document.getText();
             const lang = editor.document.languageId;
-            await manager.processUserMessage(
-                'Fix errors in this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```',
-                await buildContextString()
-            );
+            await runCommand('Fix errors in this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', 'Fixing code');
         }),
         vscode.commands.registerCommand('pi-agent.refactorCode', async () => {
             const editor = vscode.window.activeTextEditor;
@@ -175,36 +213,24 @@ export function activate(context: vscode.ExtensionContext) {
             const code = editor.document.getText(editor.selection);
             if (!code) { vscode.window.showWarningMessage('Select code to refactor'); return; }
             const lang = editor.document.languageId;
-            await manager.processUserMessage(
-                'Refactor this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```',
-                await buildContextString()
-            );
+            await runCommand('Refactor this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', 'Refactoring code');
         }),
         vscode.commands.registerCommand('pi-agent.generateTests', async () => {
             const editor = vscode.window.activeTextEditor;
             if (!editor) { vscode.window.showWarningMessage('No active editor'); return; }
             const code = editor.document.getText(editor.selection) || editor.document.getText();
             const lang = editor.document.languageId;
-            await manager.processUserMessage(
-                'Generate comprehensive tests for this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```',
-                await buildContextString()
-            );
+            await runCommand('Generate tests for this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', 'Generating tests');
         }),
         vscode.commands.registerCommand('pi-agent.reviewCode', async () => {
             const editor = vscode.window.activeTextEditor;
             if (!editor) { vscode.window.showWarningMessage('No active editor'); return; }
             const code = editor.document.getText(editor.selection) || editor.document.getText();
             const lang = editor.document.languageId;
-            await manager.processUserMessage(
-                'Review this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```',
-                await buildContextString()
-            );
+            await runCommand('Review this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', 'Reviewing code');
         }),
         vscode.commands.registerCommand('pi-agent.generateCommitMessage', async () => {
-            await manager.processUserMessage(
-                'Generate a conventional commit message. Use git_status and git_diff_staged tools first.',
-                await buildContextString()
-            );
+            await runCommand('Generate a conventional commit message. Use git_status and git_diff_staged tools first.', 'Generating commit message');
         }),
         vscode.commands.registerCommand('pi-agent.newSession', () => {
             manager.clearSession();
