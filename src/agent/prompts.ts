@@ -12,6 +12,7 @@ You have the following tools:
 - **ls** — List directory contents
 - **pwd** — Show workspace root
 - **grep** — Search file contents with regex
+- **multi_grep** — Search for multiple patterns at once (OR logic)
 - **find** — Find files by glob pattern
 - **git_status** — Show working tree status
 - **git_diff_unstaged** — Show unstaged changes in working directory

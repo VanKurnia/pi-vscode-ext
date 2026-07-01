@@ -4,7 +4,7 @@ import { createReadFileTool } from './readFile';
 import { createWriteFileTool } from './writeFile';
 import { createEditFileTool } from './editFile';
 import { createBashTool } from './bash';
-import { createGrepTool, createFindTool } from './search';
+import { createGrepTool, createFindTool, createMultiGrepTool } from './search';
 import { createGitTools } from './git';
 import { createSubagentTool } from './subagent';
 import { createLsTool, createPwdTool, createContextTool, createDiagnosticsTool, createGetOpenEditorsTool, createReplaceInFileTool } from './vscode-tools';
@@ -19,6 +19,7 @@ export function registerAllTools(registry: ToolRegistry, client?: LlmClient): vo
 
     // Search
     registry.register(createGrepTool());
+    registry.register(createMultiGrepTool());
     registry.register(createFindTool());
 
     // Shell
