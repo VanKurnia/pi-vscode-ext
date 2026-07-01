@@ -1,0 +1,164 @@
+/**
+ * VCC compile entry — orchestrates normalization → noise filtering → section building.
+ *
+ * Ported from pi-blackhole (src/core/summarize.ts).
+ */
+import type { Message } from '@earendil-works/pi-ai';
+import type { FileOps } from './types';
+import { normalize } from './normalize';
+import { filterNoise } from './filter-noise';
+import { buildSections } from './build-sections';
+import { formatSummary, capBrief, RECALL_NOTE, wrapLongLines } from './format';
+
+export interface CompileInput {
+  messages: Message[];
+  previousSummary?: string;
+  fileOps?: FileOps;
+}
+
+const HEADER_NAMES = ['Session Goal', 'Files And Changes', 'Commits', 'Outstanding Context', 'User Preferences'];
+
+const SEPARATOR = '\n\n---\n\n';
+
+/** Extract a named section from summary text. */
+const sectionOf = (text: string, header: string): string => {
+  const tag = `[${header}]`;
+  const start = text.indexOf(tag);
+  if (start < 0) return '';
+  const after = text.slice(start);
+  const nextSection = HEADER_NAMES
+    .filter((h) => h !== header)
+    .map((h) => {
+      const escaped = h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`(?:^|\\n)\\[${escaped}\\]`);
+      const m = after.match(re);
+      if (!m) return -1;
+      return m.index! + (m[0].startsWith('\n') ? 1 : 0);
+    })
+    .filter((n) => n >= 0);
+  const nextSep = after.indexOf('\n\n---\n\n');
+  const candidates = [...nextSection, ...(nextSep > 0 ? [nextSep] : [])].sort((a, b) => a - b);
+  const end = candidates[0];
+  return (end ? after.slice(0, end) : after).trim();
+};
+
+/** Extract the brief transcript part (everything after ---). */
+const briefOf = (text: string): string => {
+  const idx = text.indexOf(SEPARATOR);
+  if (idx < 0) return '';
+  return text.slice(idx + SEPARATOR.length).trim();
+};
+
+/** Merge a header section. */
+const mergeHeaderSection = (header: string, prev: string, fresh: string): string => {
+  // Outstanding Context is volatile — always use fresh only
+  if (header === 'Outstanding Context') return fresh;
+  if (!prev) return fresh;
+  if (!fresh) return prev;
+
+  // Files And Changes: merge by category (Modified/Created/Read), dedup paths
+  if (header === 'Files And Changes') {
+    return mergeFileLines(prev, fresh);
+  }
+
+  // Session Goal, User Preferences: line-level dedup, cap
+  const isClean = (l: string) => l.startsWith('- ') && !l.includes('<skill') && !l.includes('</skill');
+  const prevLines = prev.split('\n').filter(isClean);
+  const freshLines = fresh.split('\n').filter(isClean);
+  const combined = [...new Set([...prevLines, ...freshLines])];
+  const CAP = header === 'Session Goal' ? 8 : header === 'Commits' ? 8 : 15;
+  const capped = combined.length > CAP ? combined.slice(-CAP) : combined;
+  if (capped.length === 0) return '';
+  return `[${header}]\n${capped.join('\n')}`;
+};
+
+/** Merge Files And Changes by category, dedup paths across compactions. */
+const mergeFileLines = (prev: string, fresh: string): string => {
+  const categories = ['Modified', 'Created', 'Read'] as const;
+  const merged: Record<string, Set<string>> = {};
+  for (const cat of categories) merged[cat] = new Set();
+
+  for (const text of [prev, fresh]) {
+    for (const line of text.split('\n')) {
+      for (const cat of categories) {
+        const prefix = `- ${cat}: `;
+        if (!line.startsWith(prefix)) continue;
+        let rest = line.slice(prefix.length);
+        rest = rest.replace(/\s*\(\+\d+ more\)\s*$/, '');
+        for (const p of rest.split(',')) {
+          const trimmed = p.trim();
+          if (trimmed) merged[cat].add(trimmed);
+        }
+      }
+    }
+  }
+
+  // Dedup: if already in Modified, drop from Created
+  for (const p of merged.Modified) merged.Created.delete(p);
+  // Remove Read entries that also appear in Modified
+  for (const p of merged.Modified) merged.Read.delete(p);
+
+  const cap = (set: Set<string>, limit: number) => {
+    const arr = [...set];
+    if (arr.length <= limit) return arr.join(', ');
+    return arr.slice(0, limit).join(', ') + ` (+${arr.length - limit} more)`;
+  };
+
+  const lines: string[] = [];
+  if (merged.Modified.size > 0) lines.push(`- Modified: ${cap(merged.Modified, 10)}`);
+  if (merged.Created.size > 0) lines.push(`- Created: ${cap(merged.Created, 10)}`);
+  if (merged.Read.size > 0) lines.push(`- Read: ${cap(merged.Read, 10)}`);
+  if (lines.length === 0) return '';
+  return `[Files And Changes]\n${lines.join('\n')}`;
+};
+
+const mergeBriefTranscript = (prev: string, fresh: string): string => {
+  if (!prev) return fresh;
+  if (!fresh) return prev;
+  return prev + '\n\n' + fresh;
+};
+
+const mergePrevious = (prev: string, fresh: string): string => {
+  // Merge header sections
+  const headers = HEADER_NAMES
+    .map((header) => {
+      const freshSec = sectionOf(fresh, header);
+      const prevSec = sectionOf(prev, header);
+      return mergeHeaderSection(header, prevSec, freshSec);
+    })
+    .filter(Boolean);
+
+  // Merge brief transcript
+  const prevBrief = briefOf(prev);
+  const freshBrief = briefOf(fresh);
+  const mergedBrief = mergeBriefTranscript(prevBrief, freshBrief);
+
+  const parts: string[] = [];
+  if (headers.length > 0) {
+    parts.push(headers.join('\n\n'));
+  }
+  if (mergedBrief) {
+    parts.push(capBrief(mergedBrief));
+  }
+
+  return parts.join(SEPARATOR);
+};
+
+const stripRecallNote = (text: string): string => {
+  const idx = text.lastIndexOf(RECALL_NOTE);
+  if (idx < 0) return text;
+  return text.slice(0, idx).replace(/\s*(?:\n\n---\n\n)?\s*$/, '').trimEnd();
+};
+
+export const compile = (input: CompileInput): string => {
+  const blocks = filterNoise(normalize(input.messages));
+  const data = buildSections({ blocks, fileOps: input.fileOps });
+  const fresh = formatSummary(data);
+  // Strip any legacy RECALL_NOTE from prev summary
+  let prev = input.previousSummary
+    ? stripRecallNote(input.previousSummary)
+    : undefined;
+  const merged = prev ? mergePrevious(prev, fresh) : fresh;
+  if (!merged) return '';
+  return wrapLongLines(merged + SEPARATOR + RECALL_NOTE);
+};
