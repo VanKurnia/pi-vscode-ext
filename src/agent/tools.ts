@@ -10,7 +10,7 @@ export interface Tool {
         properties: Record<string, any>;
         required?: string[];
     };
-    execute: (args: any) => Promise<{ content: string; isError?: boolean }>;
+    execute: (args: any, signal?: AbortSignal) => Promise<{ content: string; isError?: boolean }>;
 }
 
 export class ToolRegistry {
@@ -32,13 +32,13 @@ export class ToolRegistry {
         return Array.from(this.tools.keys());
     }
 
-    async executeTool(name: string, args: any): Promise<{ content: string; isError?: boolean }> {
+    async executeTool(name: string, args: any, signal?: AbortSignal): Promise<{ content: string; isError?: boolean }> {
         const tool = this.tools.get(name);
         if (!tool) {
             return { content: `Unknown tool: ${name}. Available: ${this.getNames().join(', ')}`, isError: true };
         }
         try {
-            return await tool.execute(args);
+            return await tool.execute(args, signal);
         } catch (err: any) {
             return { content: `Tool error (${name}): ${err.message || String(err)}`, isError: true };
         }

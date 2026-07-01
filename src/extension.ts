@@ -236,7 +236,7 @@ export function activate(context: vscode.ExtensionContext) {
             await runCommand('Generate a conventional commit message. Use git_status and git_diff_staged tools first.', 'Generating commit message');
         }),
         vscode.commands.registerCommand('pi-agent.newSession', () => {
-            manager.clearSession();
+            manager.clear();
             vscode.window.showInformationMessage('π Agent: Session cleared');
         }),
         vscode.commands.registerCommand('pi-agent.planMode', () => {
@@ -369,7 +369,7 @@ async function handleSlashCommand(
             return {};
         }
         case 'clear': {
-            manager.clearSession();
+            manager.clear();
             stream.markdown('✅ Session cleared.\n');
             return {};
         }

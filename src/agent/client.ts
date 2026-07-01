@@ -201,6 +201,10 @@ export class LlmClient {
                             if (parsed.choices?.[0]?.finish_reason) {
                                 aggregated.choices[0].finish_reason = parsed.choices[0].finish_reason;
                             }
+                            // Extract token usage from stream (usually in last chunk)
+                            if (parsed.usage) {
+                                aggregated.usage = parsed.usage;
+                            }
 
                             onChunk(parsed);
                         } catch { /* skip malformed chunks */ }

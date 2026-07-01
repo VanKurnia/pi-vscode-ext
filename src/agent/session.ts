@@ -1,16 +1,30 @@
+export interface TokenUsage {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    totalTokens: number;
+}
+
 export interface ChatMessage {
     role: 'system' | 'user' | 'assistant' | 'tool';
     content: string | null;
     tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
     tool_call_id?: string;
     name?: string;
+    /** Actual token usage from provider (pi-compatible) */
+    usage?: TokenUsage;
+    /** Stop reason from provider */
+    stopReason?: string;
 }
+
+/** Prefix/suffix matching pi's compaction format */
+const COMPACTION_SUMMARY_PREFIX = `The conversation history before this point was compacted into the following summary:\n\n<summary>\n`;
+const COMPACTION_SUMMARY_SUFFIX = `\n</summary>`;
 
 export class Session {
     private messages: ChatMessage[] = [];
     private systemPrompt: string;
-    /** Summary of messages dropped during compaction (pi-blackhole pattern) */
-    private compactedSummary: string = '';
     private totalDropped: number = 0;
 
     constructor(systemPrompt: string) {
@@ -24,9 +38,11 @@ export class Session {
         this.messages.push({ role: 'user', content });
     }
 
-    addAssistantMessage(content: string | null, toolCalls?: any[]): void {
+    addAssistantMessage(content: string | null, toolCalls?: any[], usage?: TokenUsage, stopReason?: string): void {
         const msg: ChatMessage = { role: 'assistant', content };
         if (toolCalls && toolCalls.length > 0) { msg.tool_calls = toolCalls; }
+        if (usage) { msg.usage = usage; }
+        if (stopReason) { msg.stopReason = stopReason; }
         this.messages.push(msg);
     }
 
@@ -46,109 +62,147 @@ export class Session {
 
     getHistory(): ChatMessage[] { return [...this.messages]; }
 
-    getContext() {
-        let tokens = 0;
+    getContext(): { messageCount: number; estimatedTokens: number; usageTokens: number } {
+        let estimatedTokens = 0;
+        let usageTokens = 0;
         for (const m of this.messages) {
-            if (typeof m.content === 'string') tokens += Math.ceil(m.content.length / 4);
+            if (typeof m.content === 'string') estimatedTokens += Math.ceil(m.content.length / 4);
+            if (m.usage?.totalTokens) usageTokens = m.usage.totalTokens;
         }
-        return { messageCount: this.messages.length, estimatedTokens: tokens };
+        return { messageCount: this.messages.length, estimatedTokens, usageTokens };
     }
 
     /**
-     * Truncate conversation to fit within token limits.
-     * Preserves system prompt + most recent messages, drops oldest middle messages.
-     * Builds a compact summary of dropped messages (pi-blackhole compaction pattern).
+     * Calculate context tokens using actual provider usage when available (pi-compatible).
+     * Falls back to char-based estimation.
+     */
+    calculateContextTokens(): number {
+        // Find last valid assistant usage
+        for (let i = this.messages.length - 1; i >= 0; i--) {
+            const m = this.messages[i];
+            if (m.role === 'assistant' && m.usage?.totalTokens && m.stopReason !== 'aborted' && m.stopReason !== 'error') {
+                return m.usage.totalTokens;
+            }
+        }
+        // Fallback: estimate from content
+        let tokens = 0;
+        for (const m of this.messages) {
+            if (typeof m.content === 'string') tokens += Math.ceil(m.content.length / 4);
+            if (m.tool_calls) {
+                for (const tc of m.tool_calls) {
+                    tokens += Math.ceil((tc.function.arguments?.length || 0) / 4);
+                }
+            }
+        }
+        return tokens;
+    }
+
+    /**
+     * Serialize conversation for compaction summarization (pi-compatible).
+     * Converts messages to plain text with role labels.
+     */
+    serializeForCompaction(maxCharsPerResult: number = 2000): string {
+        const parts: string[] = [];
+        for (const msg of this.messages) {
+            if (msg.role === 'system') continue;
+            if (msg.role === 'user' && typeof msg.content === 'string') {
+                parts.push(`[User]: ${msg.content}`);
+            } else if (msg.role === 'assistant') {
+                if (msg.content) parts.push(`[Assistant]: ${msg.content}`);
+                if (msg.tool_calls) {
+                    const calls = msg.tool_calls.map(tc => `${tc.function.name}(${tc.function.arguments})`).join('; ');
+                    parts.push(`[Assistant tool calls]: ${calls}`);
+                }
+            } else if (msg.role === 'tool' && msg.name) {
+                const content = msg.content || '';
+                const truncated = content.length > maxCharsPerResult
+                    ? content.slice(0, maxCharsPerResult) + `\n\n[... ${content.length - maxCharsPerResult} more characters truncated]`
+                    : content;
+                parts.push(`[Tool ${msg.name}]: ${truncated}`);
+            }
+        }
+        return parts.join('\n\n');
+    }
+
+    /**
+     * Check if compaction is needed based on actual token usage.
+     * Returns true if context exceeds (contextWindow - reserveTokens).
+     */
+    needsCompaction(contextWindow: number, reserveTokens: number = 16384): boolean {
+        const currentTokens = this.calculateContextTokens();
+        return currentTokens > (contextWindow - reserveTokens);
+    }
+
+    /**
+     * Replace compacted messages with LLM-generated summary (pi-compatible).
+     * Keeps the system prompt and most recent messages.
+     * Returns the compaction summary for the caller to send to LLM.
+     */
+    applyCompaction(summary: string, keepRecentCount: number = 10): void {
+        if (this.messages.length <= keepRecentCount + 1) return; // system + recent
+
+        const systemMsg = this.messages[0];
+        const recentMessages = this.messages.slice(-keepRecentCount);
+        const droppedCount = this.messages.length - 1 - keepRecentCount;
+
+        // Build compaction summary message (pi-compatible format)
+        const summaryContent = COMPACTION_SUMMARY_PREFIX + summary + COMPACTION_SUMMARY_SUFFIX;
+
+        // Reconstruct: system → compaction summary → recent messages
+        this.messages = [
+            systemMsg,
+            { role: 'user', content: summaryContent },
+            ...recentMessages,
+        ];
+
+        this.totalDropped += droppedCount;
+    }
+
+    /**
+     * Simple truncation fallback when LLM summarization is not available.
+     * Preserves tool_call + tool_result pairs.
      */
     truncateToTokenLimit(maxTokens: number): number {
-        if (this.messages.length <= 2) return 0; // system + 1 message, nothing to truncate
+        if (this.messages.length <= 2) return 0;
 
         const systemMsg = this.messages[0];
         const nonSystem = this.messages.slice(1);
-
-        // Estimate current tokens
-        let totalTokens = 0;
-        for (const m of this.messages) {
-            if (typeof m.content === 'string') totalTokens += Math.ceil(m.content.length / 4);
-        }
+        let totalTokens = this.calculateContextTokens();
 
         if (totalTokens <= maxTokens) return 0;
 
-        // Drop oldest messages (keep tool_call + tool_result pairs together)
-        // Build summary entries from dropped messages
-        const summaryEntries: string[] = [];
         let dropped = 0;
         while (totalTokens > maxTokens * 0.8 && nonSystem.length > 2) {
             const removed = nonSystem.shift();
             if (removed) {
-                // Capture key info from dropped messages
-                if (removed.role === 'user' && typeof removed.content === 'string') {
-                    const preview = removed.content.slice(0, 100);
-                    summaryEntries.push(`[user] ${preview}${removed.content.length > 100 ? '...' : ''}`);
-                } else if (removed.role === 'assistant' && typeof removed.content === 'string' && removed.content) {
-                    const preview = removed.content.slice(0, 80);
-                    summaryEntries.push(`[assistant] ${preview}${removed.content.length > 80 ? '...' : ''}`);
-                } else if (removed.role === 'assistant' && removed.tool_calls) {
-                    const toolNames = removed.tool_calls.map(tc => tc.function.name).join(', ');
-                    summaryEntries.push(`[assistant] called: ${toolNames}`);
-                } else if (removed.role === 'tool' && removed.name) {
-                    summaryEntries.push(`[tool:${removed.name}] result`);
-                }
                 if (typeof removed.content === 'string') {
                     totalTokens -= Math.ceil(removed.content.length / 4);
                 }
+                dropped++;
             }
-            // If this was an assistant message with tool_calls, also remove the following tool results
+            // Keep tool_call + tool_result pairs together
             if (removed?.role === 'assistant' && removed.tool_calls) {
                 while (nonSystem.length > 2 && nonSystem[0]?.role === 'tool') {
                     const toolMsg = nonSystem.shift();
-                    if (toolMsg) {
-                        if (toolMsg.name) summaryEntries.push(`[tool:${toolMsg.name}] result`);
-                        if (typeof toolMsg.content === 'string') {
-                            totalTokens -= Math.ceil(toolMsg.content.length / 4);
-                        }
+                    if (toolMsg && typeof toolMsg.content === 'string') {
+                        totalTokens -= Math.ceil(toolMsg.content.length / 4);
                     }
                     dropped++;
                 }
             }
-            dropped++;
         }
 
-        // Update compacted summary (keep last 20 entries to avoid bloat)
-        if (summaryEntries.length > 0) {
-            this.totalDropped += summaryEntries.length;
-            const newSummary = summaryEntries.join('\n');
-            this.compactedSummary = this.compactedSummary
-                ? this.compactedSummary + '\n' + newSummary
-                : newSummary;
-            // Trim summary to avoid growing indefinitely
-            const summaryLines = this.compactedSummary.split('\n');
-            if (summaryLines.length > 30) {
-                const omitted = summaryLines.length - 30;
-                this.compactedSummary = `[${omitted} earlier entries omitted]\n` + summaryLines.slice(-30).join('\n');
-            }
+        if (dropped > 0) {
+            this.totalDropped += dropped;
+            this.messages = [systemMsg, ...nonSystem];
         }
-
-        // Inject compacted summary as a system message if we have one
-        this.messages = [systemMsg, ...nonSystem];
-        if (this.compactedSummary) {
-            // Update or insert the compaction summary after system prompt
-            const summaryMsg: ChatMessage = {
-                role: 'system',
-                content: `[Compacted conversation summary — ${this.totalDropped} earlier messages were summarized to save context]\n${this.compactedSummary}`,
-            };
-            // Remove any existing compacted summary first
-            const firstNonSystem = this.messages.findIndex((m, i) => i > 0 && m.role === 'system' && m.content?.startsWith('[Compacted'));
-            if (firstNonSystem > 0) {
-                this.messages.splice(firstNonSystem, 1);
-            }
-            this.messages.splice(1, 0, summaryMsg);
-        }
-
         return dropped;
     }
 
     clear(): void {
         this.messages = [];
-        if (this.systemPrompt) this.messages.push({ role: 'system', content: this.systemPrompt });
+        if (this.systemPrompt) {
+            this.messages.push({ role: 'system', content: this.systemPrompt });
+        }
     }
 }
