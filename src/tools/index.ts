@@ -10,8 +10,10 @@ import { createSubagentTool } from './subagent';
 import { createLsTool, createPwdTool, createContextTool, createDiagnosticsTool, createGetOpenEditorsTool, createReplaceInFileTool } from './vscode-tools';
 import { createAskUserQuestionTool } from './askUserQuestion';
 import { createWebSearchTool, createWebFetchTool } from './webTools';
+import { createRecallTool } from './recall';
+import { Session } from '../agent/session';
 
-export function registerAllTools(registry: ToolRegistry, client?: LlmClient): void {
+export function registerAllTools(registry: ToolRegistry, client?: LlmClient, getSession?: () => Session): void {
     // File operations
     registry.register(createReadFileTool());
     registry.register(createWriteFileTool());
@@ -44,6 +46,11 @@ export function registerAllTools(registry: ToolRegistry, client?: LlmClient): vo
 
     // User interaction
     registry.register(createAskUserQuestionTool());
+
+    // Recall (pi-blackhole equivalent — search conversation history)
+    if (getSession) {
+        registry.register(createRecallTool(getSession));
+    }
 
     // Subagent (needs LlmClient + toolRegistry for tool access)
     if (client) {

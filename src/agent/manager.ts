@@ -32,7 +32,7 @@ export class PiAgentManager extends EventEmitter implements Disposable {
         this.toolRegistry = new ToolRegistry();
         const config = getConfig();
         this.session = new Session(buildSystemPrompt());
-        registerAllTools(this.toolRegistry, this.client);
+        registerAllTools(this.toolRegistry, this.client, () => this.session);
         this.refreshAgents();
         this.logger.info('PiAgentManager initialized');
     }
