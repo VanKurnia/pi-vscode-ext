@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-// PiAgentManager replaced by bridge — using any for now
 import { AgentConfig } from '../agent/agents';
 
 export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentTreeItem>, vscode.Disposable {
@@ -15,8 +14,8 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentTreeItem
 
     getChildren(element?: AgentTreeItem): Thenable<AgentTreeItem[]> {
         if (!element) {
-            const agents = this.manager.getAgents();
-            return Promise.resolve(agents.map(a => new AgentTreeItem(a)));
+            const agents: AgentConfig[] = this.manager.getAgents();
+            return Promise.resolve(agents.map((a: AgentConfig) => new AgentTreeItem(a)));
         }
         return Promise.resolve([]);
     }

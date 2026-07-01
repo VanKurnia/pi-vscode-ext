@@ -1,5 +1,56 @@
 import { Tool } from '../agent/tools';
-// Session/ChatMessage replaced by bridge — using any for now
+import type { Session } from '@earendil-works/pi-agent-core/node';
+import type { AgentMessage, SessionContext } from '@earendil-works/pi-agent-core';
+import type { TextContent, ThinkingContent, ToolCall, UserMessage, AssistantMessage, ToolResultMessage } from '@earendil-works/pi-ai';
+
+/**
+ * Extract plain text from an AgentMessage's content field.
+ */
+function extractText(msg: AgentMessage): string {
+    if (msg.role === 'user') {
+        const um = msg as UserMessage;
+        if (typeof um.content === 'string') return um.content;
+        return um.content
+            .filter((c): c is TextContent => c.type === 'text')
+            .map(c => c.text)
+            .join(' ');
+    }
+    if (msg.role === 'assistant') {
+        const am = msg as AssistantMessage;
+        return am.content
+            .filter((c): c is TextContent => c.type === 'text')
+            .map(c => c.text)
+            .join(' ');
+    }
+    if (msg.role === 'toolResult') {
+        const tr = msg as ToolResultMessage;
+        return tr.content
+            .filter((c): c is TextContent => c.type === 'text')
+            .map(c => c.text)
+            .join(' ');
+    }
+    return '';
+}
+
+/**
+ * Get tool call names from an assistant message, if any.
+ */
+function getToolCallNames(msg: AgentMessage): string[] {
+    if (msg.role === 'assistant') {
+        const am = msg as AssistantMessage;
+        return am.content
+            .filter((c): c is ToolCall => c.type === 'toolCall')
+            .map(c => c.name);
+    }
+    return [];
+}
+
+/**
+ * Check if an assistant message has tool calls.
+ */
+function hasToolCalls(msg: AgentMessage): boolean {
+    return getToolCallNames(msg).length > 0;
+}
 
 /**
  * recall tool — equivalent to pi-blackhole's unified recall.
@@ -30,35 +81,48 @@ export function createRecallTool(getSession: () => Session): Tool {
         async execute(args: any) {
             try {
                 const session = getSession();
-                const history = session.getHistory();
 
-                if (history.length === 0) {
+                // Use scope to decide whether to get full history or current branch
+                const scope = args.scope || 'all';
+                let messages: AgentMessage[];
+
+                if (scope === 'lineage') {
+                    // Current branch only
+                    const branch = await session.getBranch();
+                    messages = branch
+                        .filter(e => e.type === 'message')
+                        .map((e: any) => e.message as AgentMessage);
+                } else {
+                    // Full context (all messages visible to the model)
+                    const ctx: SessionContext = await session.buildContext();
+                    messages = ctx.messages;
+                }
+
+                if (messages.length === 0) {
                     return { content: 'No conversation history found.' };
                 }
 
                 const mode = args.mode || 'search';
-                const scope = args.scope || 'all';
 
                 // Build searchable entries with indices
-                const entries = history
-                    .map((msg: ChatMessage, idx: number) => ({
+                const entries = messages
+                    .map((msg, idx) => ({
                         index: idx,
                         role: msg.role,
-                        content: typeof msg.content === 'string' ? msg.content : '',
-                        name: msg.name,
-                        hasToolCalls: !!(msg.tool_calls && msg.tool_calls.length > 0),
-                        toolCallNames: msg.tool_calls?.map(tc => tc.function.name) || [],
+                        content: extractText(msg),
+                        hasToolCalls: hasToolCalls(msg),
+                        toolCallNames: getToolCallNames(msg),
                     }))
-                    .filter((e: any) => e.role !== 'system'); // Skip system prompt
+                    .filter(e => e.role !== 'compactionSummary');
 
                 let results: typeof entries = [];
 
                 if (mode === 'index' && typeof args.index === 'number') {
                     // Direct index lookup
                     const idx = args.index;
-                    const found = entries.filter((e: any) => e.index === idx);
+                    const found = entries.filter(e => e.index === idx);
                     if (found.length === 0) {
-                        return { content: `Message #${idx} not found. Valid range: 0-${history.length - 1}` };
+                        return { content: `Message #${idx} not found. Valid range: 0-${entries.length - 1}` };
                     }
                     results = found;
                 } else if (mode === 'recent') {
@@ -70,7 +134,7 @@ export function createRecallTool(getSession: () => Session): Tool {
                     if (!query) return { content: 'No search query provided.' };
 
                     const queryTerms = query.split(/\s+/).filter((t: string) => t.length > 0);
-                    results = entries.filter((entry: any) => {
+                    results = entries.filter(entry => {
                         const text = entry.content.toLowerCase();
                         return queryTerms.every((term: string) => text.includes(term));
                     });
@@ -84,8 +148,8 @@ export function createRecallTool(getSession: () => Session): Tool {
                 const lines = [`**Found ${results.length} conversation entries:**`, ''];
                 for (const entry of results) {
                     const roleIcon = entry.role === 'user' ? '👤' : entry.role === 'assistant' ? '🤖' : '🔧';
-                    const roleLabel = entry.role === 'tool'
-                        ? `tool:${entry.name || 'unknown'}`
+                    const roleLabel = entry.role === 'toolResult'
+                        ? `tool`
                         : entry.role;
 
                     // Truncate long content for display

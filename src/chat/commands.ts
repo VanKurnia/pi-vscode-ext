@@ -6,6 +6,7 @@
 import * as vscode from 'vscode';
 import type { AgentHarness } from '@earendil-works/pi-agent-core/node';
 import { streamFromHarness } from '../bridge/stream-bridge';
+import type { PlanModeManager } from './planMode';
 
 const noopToken: vscode.CancellationToken = {
     isCancellationRequested: false,
@@ -23,7 +24,8 @@ export async function handleSlashCommand(
     command: string,
     prompt: string,
     stream: vscode.ChatResponseStream,
-    harness: AgentHarness
+    harness: AgentHarness,
+    planMode?: PlanModeManager
 ): Promise<vscode.ChatResult> {
     switch (command) {
         case 'explain': {
@@ -61,10 +63,19 @@ export async function handleSlashCommand(
             return {};
         }
         case 'plan': {
-            if (prompt.trim()) {
-                await streamFromHarness(harness, `Create a detailed step-by-step plan for: ${prompt}`, stream, noopToken);
-            } else {
+            if (!prompt.trim()) {
                 stream.markdown('Usage: `/plan <task description>`');
+                return {};
+            }
+            // Use PlanModeManager if available
+            if (planMode) {
+                const planInstruction = planMode.startPlan();
+                const fullPrompt = `${planInstruction}\n\nUser request: ${prompt}`;
+                await streamFromHarness(harness, fullPrompt, stream, noopToken);
+                // Parse steps from the response if planning succeeded
+                stream.markdown('\n\n---\n*Plan mode active. Use `/plan` again with your next step to continue.*');
+            } else {
+                await streamFromHarness(harness, `Create a detailed step-by-step plan for: ${prompt}`, stream, noopToken);
             }
             return {};
         }
@@ -79,6 +90,7 @@ export async function handleSlashCommand(
             return {};
         }
         case 'clear': {
+            if (planMode) { planMode.reset(); }
             stream.markdown('✅ Session cleared.\n');
             return {};
         }

@@ -1,5 +1,5 @@
 import { ToolRegistry } from '../agent/tools';
-// LlmClient replaced by bridge — using any for now
+import type { Session } from '@earendil-works/pi-agent-core/node';
 import { createReadFileTool } from './readFile';
 import { createWriteFileTool } from './writeFile';
 import { createEditFileTool } from './editFile';
@@ -11,7 +11,6 @@ import { createLsTool, createPwdTool, createContextTool, createDiagnosticsTool, 
 import { createAskUserQuestionTool } from './askUserQuestion';
 import { createWebSearchTool, createWebFetchTool } from './webTools';
 import { createRecallTool } from './recall';
-// Session replaced by bridge — using any for now
 import { createDbTools } from './dbTools';
 import { createSkillTools } from './skillTools';
 import { createTodoTool } from './todoTool';
@@ -24,7 +23,7 @@ import { TodoTreeProvider } from '../ui/todoProvider';
 
 export function registerAllTools(
     registry: ToolRegistry,
-    client?: LlmClient,
+    client?: any,
     getSession?: () => Session,
     options?: { skillDiscovery?: SkillDiscovery; todoProvider?: TodoTreeProvider }
 ): void {

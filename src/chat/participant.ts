@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import type { PiBridgeContext } from '../bridge/types';
 import { streamFromHarness } from '../bridge/stream-bridge';
 import { handleSlashCommand, helpMarkdown } from './commands';
+import { PlanModeManager } from './planMode';
 import { Logger } from '../utils/logger';
 
 const logger = Logger.getInstance();
@@ -16,6 +17,8 @@ export function registerChatParticipant(
     bridge: PiBridgeContext,
     extensionUri: vscode.Uri
 ): vscode.ChatParticipant {
+    const planMode = new PlanModeManager();
+
     const chatParticipant = vscode.chat.createChatParticipant(
         'pi-agent.chat',
         async (
@@ -28,7 +31,7 @@ export function registerChatParticipant(
 
             // Slash commands
             if (request.command) {
-                return await handleSlashCommand(request.command, prompt, stream, bridge.harness);
+                return await handleSlashCommand(request.command, prompt, stream, bridge.harness, planMode);
             }
 
             // Empty message
@@ -38,10 +41,19 @@ export function registerChatParticipant(
                 return {};
             }
 
+            // If plan mode is active, inject plan context into the prompt
+            let fullPrompt = prompt;
+            if (planMode.isActive()) {
+                const modifier = planMode.getSystemPromptModifier();
+                if (modifier) {
+                    fullPrompt = `${modifier}\n\nUser message: ${prompt}`;
+                }
+            }
+
             // Regular message → AgentHarness
             logger.info(`[chat] User message: ${prompt.slice(0, 100)}`);
             try {
-                await streamFromHarness(bridge.harness, prompt, stream, token);
+                await streamFromHarness(bridge.harness, fullPrompt, stream, token);
             } catch (err: any) {
                 logger.error(`[chat] Error: ${err.message}`);
             }
