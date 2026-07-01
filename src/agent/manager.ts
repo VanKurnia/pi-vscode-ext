@@ -8,31 +8,9 @@ import { discoverAgents, AgentConfig, resolveModel } from './agents';
 import { getConfig } from '../utils/config';
 import { Logger } from '../utils/logger';
 import { registerAllTools } from '../tools';
+import type { AgentEventMap, AgentEvent, AgentEventData } from '../utils/typedEvents';
 
-// ═══════════════════════════════════════════════════════════════
-// TYPES — AgentEvent map for type-safe events
-// ═══════════════════════════════════════════════════════════════
-
-export interface AgentEventMap {
-    userMessage: { content: string };
-    assistantMessage: { content: string; agent?: string };
-    toolCall: { id?: string; name: string; arguments: any };
-    toolResult: { id?: string; name: string; content: string; isError?: boolean };
-    streamStart: {};
-    streamChunk: { content: string };
-    streamEnd: {};
-    error: { message: string };
-    clear: {};
-    status: { status: 'thinking' | 'streaming' | 'executing' | 'compacting' | 'idle'; agent?: string };
-    compaction: { summary: string; droppedCount: number };
-}
-
-export type AgentEvent = keyof AgentEventMap;
-
-export interface AgentEventData<K extends AgentEvent = AgentEvent> {
-    type: K;
-    data: AgentEventMap[K];
-}
+export type { AgentEvent, AgentEventData, AgentEventMap };
 
 // ═══════════════════════════════════════════════════════════════
 // SUMMARIZATION PROMPT (pi-compatible)
