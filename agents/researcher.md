@@ -1,7 +1,7 @@
 ---
 name: researcher
 description: Research specialist — analyzes code patterns and documentation
-tools: read, grep, find, git_status, git_diff, git_log, git_show
+tools: read_file, grep, find, ls, ask_user_question, git_status, git_diff_unstaged, git_diff_staged, git_log, git_show, git_branch, context
 model: $RESEARCHER_MODEL
 ---
 

@@ -2,17 +2,22 @@ import { Tool, ToolRegistry } from '../agent/tools';
 import { LlmClient } from '../agent/client';
 import { getChatModel } from '../utils/config';
 import { buildSystemPrompt } from '../agent/prompts';
+import { discoverAgents, AgentConfig, resolveModel } from '../agent/agents';
 import { Logger } from '../utils/logger';
+import * as vscode from 'vscode';
 
 const MAX_SUBAGENT_ITERATIONS = 5;
 
 export function createSubagentTool(client: LlmClient, toolRegistry?: ToolRegistry): Tool {
     return {
         name: 'subagent',
-        description: 'Delegate a task to an isolated AI subagent for independent research, analysis, or code review. The subagent runs a separate LLM conversation with tool access — use for parallel investigation tasks.',
+        description: `Delegate a task to an isolated AI subagent. Supports two modes:
+- Named agent: specify "agent" to use a preconfigured agent (worker, scout, researcher) with its own system prompt and filtered tool set.
+- Ad-hoc: specify just "task" for a generic subagent with all tools.`,
         parameters: {
             type: 'object' as const,
             properties: {
+                agent: { type: 'string', description: 'Name of a preconfigured agent (worker, scout, researcher). Optional — omit for ad-hoc mode.' },
                 task: { type: 'string', description: 'The task or question for the subagent' },
                 context: { type: 'string', description: 'Additional context to pass to the subagent' },
             },
@@ -21,18 +26,40 @@ export function createSubagentTool(client: LlmClient, toolRegistry?: ToolRegistr
         async execute(args: any) {
             const logger = Logger.getInstance();
             try {
-                const model = getChatModel();
-                const systemPrompt = buildSystemPrompt() +
-                    '\n\nYou are a subagent — an isolated AI worker. Complete the task thoroughly and return your findings. ' +
-                    'You have access to tools (read files, search, bash, git). Use them proactively to investigate. ' +
-                    'When done, provide a clear summary of your findings.';
+                let systemPrompt: string;
+                let toolNames: string[] | undefined;
+                let model: string;
+
+                // Named agent mode — use preconfigured agent with filtered tools
+                if (args.agent) {
+                    const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                    const agents = discoverAgents(ws);
+                    const agentConfig = agents.find(a => a.name === args.agent);
+                    if (!agentConfig) {
+                        const available = agents.map(a => a.name).join(', ') || 'none';
+                        return { content: `Unknown agent: "${args.agent}". Available agents: ${available}`, isError: true };
+                    }
+                    systemPrompt = agentConfig.systemPrompt || buildSystemPrompt();
+                    toolNames = agentConfig.tools.length > 0 ? agentConfig.tools : undefined;
+                    model = resolveModel(agentConfig.model) || getChatModel();
+                    logger.info(`Subagent dispatch: agent=${agentConfig.name}, tools=[${(toolNames || []).join(', ')}], model=${model}`);
+                } else {
+                    // Ad-hoc mode — use default system prompt with all tools
+                    systemPrompt = buildSystemPrompt() +
+                        '\n\nYou are a subagent — an isolated AI worker. Complete the task thoroughly and return your findings. ' +
+                        'You have access to tools (read files, search, bash, git). Use them proactively to investigate. ' +
+                        'When done, provide a clear summary of your findings.';
+                    toolNames = undefined; // all tools
+                    model = getChatModel();
+                }
 
                 const messages: any[] = [
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: args.context ? args.task + '\n\nContext:\n' + args.context : args.task },
                 ];
 
-                const tools = toolRegistry?.toFunctionDefinitions() || [];
+                // Get filtered tool definitions based on agent config
+                const tools = toolRegistry?.toFunctionDefinitions(toolNames) || [];
                 let fullContent = '';
 
                 // Tool execution loop (max iterations to prevent runaway)
@@ -79,8 +106,9 @@ export function createSubagentTool(client: LlmClient, toolRegistry?: ToolRegistr
                     }
                 }
 
+                const label = args.agent ? `${args.agent} agent` : 'Subagent';
                 return {
-                    content: '**Subagent result:**\n\n' + (fullContent || '(no output — max iterations reached)')
+                    content: `**${label} result:**\n\n` + (fullContent || '(no output — max iterations reached)')
                 };
             } catch (err: any) {
                 return { content: 'Subagent error: ' + err.message, isError: true };

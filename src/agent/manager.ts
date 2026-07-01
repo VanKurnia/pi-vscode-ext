@@ -95,7 +95,9 @@ export class PiAgentManager extends EventEmitter implements Disposable {
         this.emitEvent('toolCall', { name: 'subagent', arguments: { agent: agentName, task } });
 
         try {
-            const tools = this.toolRegistry.toFunctionDefinitions();
+            // Filter tools based on agent's configured tool list
+            const toolNames = agent.tools.length > 0 ? agent.tools : undefined;
+            const tools = this.toolRegistry.toFunctionDefinitions(toolNames);
             const response = await this.client.chatCompletion(agentSession.getMessagesForApi(), { model, tools: tools.length > 0 ? tools : undefined });
             const content = response.choices?.[0]?.message?.content || '';
             this.emitEvent('assistantMessage', { content, agent: agentName });

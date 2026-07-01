@@ -22,6 +22,8 @@ const gitTools: Tool[] = [
     {
         name: 'git_status',
         description: 'Shows the working tree status',
+        promptSnippet: 'Check git working tree status',
+        promptGuidelines: ['Use this to check what files are modified, staged, or untracked before other git operations'],
         parameters: { type: 'object' as const, properties: { repo_path: { type: 'string', description: 'Path to repo' } }, required: [] },
         async execute(args: any) {
             try {
@@ -31,8 +33,10 @@ const gitTools: Tool[] = [
         },
     },
     {
-        name: 'git_diff',
-        description: 'Shows unstaged changes in working directory',
+        name: 'git_diff_unstaged',
+        description: 'Shows unstaged changes in working directory not yet staged',
+        promptSnippet: 'Show unstaged changes in working directory',
+        promptGuidelines: ['Shows changes not yet staged — use to review local edits before committing'],
         parameters: { type: 'object' as const, properties: { repo_path: { type: 'string', description: 'Path to repo' }, context_lines: { type: 'number', description: 'Context lines (default: 3)' } }, required: [] },
         async execute(args: any) {
             try {
@@ -44,8 +48,10 @@ const gitTools: Tool[] = [
     },
     {
         name: 'git_diff_staged',
-        description: 'Shows staged changes',
-        parameters: { type: 'object' as const, properties: { repo_path: { type: 'string', description: 'Path to repo' }, context_lines: { type: 'number', description: 'Context lines' } }, required: [] },
+        description: 'Shows staged changes ready for commit',
+        promptSnippet: 'Show staged changes ready for commit',
+        promptGuidelines: ['Use after git_add to review what will be committed'],
+        parameters: { type: 'object' as const, properties: { repo_path: { type: 'string', description: 'Path to repo' }, context_lines: { type: 'number', description: 'Context lines (default: 3)' } }, required: [] },
         async execute(args: any) {
             try {
                 const c = args?.context_lines ?? 3;
@@ -55,8 +61,28 @@ const gitTools: Tool[] = [
         },
     },
     {
+        name: 'git_diff',
+        description: 'Shows all uncommitted changes (staged + unstaged combined)',
+        promptSnippet: 'Show all uncommitted changes for review',
+        promptGuidelines: ['Use for a comprehensive view of all pending changes before commit'],
+        parameters: { type: 'object' as const, properties: { repo_path: { type: 'string', description: 'Path to repo' }, context_lines: { type: 'number', description: 'Context lines (default: 3)' } }, required: [] },
+        async execute(args: any) {
+            try {
+                const c = args?.context_lines ?? 3;
+                const unstaged = await runGit(['diff', '-U' + c], args?.repo_path);
+                const staged = await runGit(['diff', '--staged', '-U' + c], args?.repo_path);
+                const parts = [];
+                if (staged) parts.push('## Staged\n' + staged);
+                if (unstaged) parts.push('## Unstaged\n' + unstaged);
+                return { content: parts.join('\n\n') || 'No uncommitted changes' };
+            } catch (e: any) { return { content: e.message, isError: true }; }
+        },
+    },
+    {
         name: 'git_add',
         description: 'Stage files for commit',
+        promptSnippet: 'Stage files for the next commit',
+        promptGuidelines: ['Stage only the files relevant to your current change'],
         parameters: { type: 'object' as const, properties: { files: { type: 'string', description: 'Space-separated files or "."' }, repo_path: { type: 'string', description: 'Path to repo' } }, required: ['files'] },
         async execute(args: any) {
             try {
@@ -69,11 +95,24 @@ const gitTools: Tool[] = [
     {
         name: 'git_commit',
         description: 'Create a commit with a message',
+        promptSnippet: 'Commit staged changes',
+        promptGuidelines: ['Always git_diff_staged first to review; use conventional commit messages'],
         parameters: { type: 'object' as const, properties: { message: { type: 'string', description: 'Commit message' }, repo_path: { type: 'string', description: 'Path to repo' } }, required: ['message'] },
         async execute(args: any) {
             try {
                 const o = await runGit(['commit', '-m', args.message], args?.repo_path);
                 return { content: 'Committed:\n' + o };
+            } catch (e: any) { return { content: e.message, isError: true }; }
+        },
+    },
+    {
+        name: 'git_reset',
+        description: 'Unstage all staged changes (soft reset)',
+        parameters: { type: 'object' as const, properties: { repo_path: { type: 'string', description: 'Path to repo' } }, required: [] },
+        async execute(args: any) {
+            try {
+                await runGit(['reset'], args?.repo_path);
+                return { content: 'Successfully unstaged all changes' };
             } catch (e: any) { return { content: e.message, isError: true }; }
         },
     },
@@ -90,19 +129,35 @@ const gitTools: Tool[] = [
         },
     },
     {
-        name: 'git_branch',
-        description: 'List, create, or switch branches',
-        parameters: { type: 'object' as const, properties: { action: { type: 'string', description: 'list/create/checkout' }, branch_name: { type: 'string', description: 'Branch name' }, repo_path: { type: 'string', description: 'Path to repo' } }, required: [] },
+        name: 'git_create_branch',
+        description: 'Create a new branch and switch to it',
+        parameters: { type: 'object' as const, properties: { branch_name: { type: 'string', description: 'Name for the new branch' }, repo_path: { type: 'string', description: 'Path to repo' } }, required: ['branch_name'] },
         async execute(args: any) {
             try {
-                const action = args?.action || 'list';
-                if (action === 'list') { const o = await runGit(['branch', '-a'], args?.repo_path); return { content: o }; }
-                if ((action === 'create' || action === 'checkout') && args?.branch_name) {
-                    const gitArgs = action === 'create' ? ['checkout', '-b', args.branch_name] : ['checkout', args.branch_name];
-                    await runGit(gitArgs, args?.repo_path);
-                    return { content: (action === 'create' ? 'Created' : 'Switched to') + ' branch: ' + args.branch_name };
-                }
-                return { content: 'Specify branch_name for create/checkout', isError: true };
+                await runGit(['checkout', '-b', args.branch_name], args?.repo_path);
+                return { content: 'Created and switched to branch: ' + args.branch_name };
+            } catch (e: any) { return { content: e.message, isError: true }; }
+        },
+    },
+    {
+        name: 'git_checkout',
+        description: 'Switch to an existing branch',
+        parameters: { type: 'object' as const, properties: { branch_name: { type: 'string', description: 'Branch name to checkout' }, repo_path: { type: 'string', description: 'Path to repo' } }, required: ['branch_name'] },
+        async execute(args: any) {
+            try {
+                await runGit(['checkout', args.branch_name], args?.repo_path);
+                return { content: 'Switched to branch: ' + args.branch_name };
+            } catch (e: any) { return { content: e.message, isError: true }; }
+        },
+    },
+    {
+        name: 'git_branch',
+        description: 'List all branches',
+        parameters: { type: 'object' as const, properties: { repo_path: { type: 'string', description: 'Path to repo' } }, required: [] },
+        async execute(args: any) {
+            try {
+                const o = await runGit(['branch', '-a'], args?.repo_path);
+                return { content: o || 'No branches' };
             } catch (e: any) { return { content: e.message, isError: true }; }
         },
     },
@@ -114,17 +169,6 @@ const gitTools: Tool[] = [
             try {
                 const o = await runGit(['show', args?.ref || 'HEAD', '--stat'], args?.repo_path);
                 return { content: o };
-            } catch (e: any) { return { content: e.message, isError: true }; }
-        },
-    },
-    {
-        name: 'git_reset',
-        description: 'Unstage all staged changes (soft reset)',
-        parameters: { type: 'object' as const, properties: { repo_path: { type: 'string', description: 'Path to repo' } }, required: [] },
-        async execute(args: any) {
-            try {
-                await runGit(['reset'], args?.repo_path);
-                return { content: 'Successfully unstaged all changes' };
             } catch (e: any) { return { content: e.message, isError: true }; }
         },
     },

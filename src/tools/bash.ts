@@ -8,7 +8,9 @@ import { getWorkspaceRoot } from '../utils/pathGuard';
 export function createBashTool(): Tool {
     return {
         name: 'bash',
-        description: 'Execute a bash/shell command in the workspace. Returns stdout, stderr, and exit code.',
+        description: 'Execute a shell command (bash). Use for running tests, builds, git commands, installs, or any system operations. Stdout and stderr are returned. Commands that match dangerous patterns are blocked. Timeout: 30s default.',
+        promptSnippet: 'Run a shell command',
+        promptGuidelines: ['Use for tests, builds, installs, and system operations', 'Prefer specific git tools over raw git commands'],
         parameters: {
             type: 'object' as const,
             properties: {

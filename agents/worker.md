@@ -1,7 +1,7 @@
 ---
 name: worker
 description: General-purpose worker — reads, writes, and edits code
-tools: read, write, edit, bash, git_status, git_diff, git_add, git_commit
+tools: read_file, write_file, edit_file, bash, ls, grep, find, ask_user_question, git_status, git_diff_unstaged, git_diff_staged, git_diff, git_add, git_commit, git_reset, git_log, git_create_branch, git_checkout, git_show, git_branch, get_diagnostics, context
 model: $WORKER_MODEL
 ---
 
@@ -14,6 +14,7 @@ Guidelines:
 - Make targeted edits, not wholesale rewrites
 - Use bash for running commands (tests, builds, installs, etc.)
 - If something fails, diagnose and fix it
+- Ask the user with ask_user_question when you need a decision or clarification
 - Report what you did and what changed when done
 
 Output format when done:

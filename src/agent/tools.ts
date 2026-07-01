@@ -1,6 +1,10 @@
 export interface Tool {
     name: string;
     description: string;
+    /** Short snippet for when to use this tool (pi-agent-setup pattern) */
+    promptSnippet?: string;
+    /** Guidelines for the LLM on how to use this tool effectively */
+    promptGuidelines?: string[];
     parameters: {
         type: 'object';
         properties: Record<string, any>;
@@ -40,14 +44,26 @@ export class ToolRegistry {
         }
     }
 
-    toFunctionDefinitions(): any[] {
-        return this.getAll().map(tool => ({
-            type: 'function',
-            function: {
-                name: tool.name,
-                description: tool.description,
-                parameters: tool.parameters,
-            },
-        }));
+    toFunctionDefinitions(toolNames?: string[]): any[] {
+        const tools = toolNames
+            ? this.getAll().filter(t => toolNames.includes(t.name))
+            : this.getAll();
+        return tools.map(tool => {
+            let desc = tool.description;
+            if (tool.promptSnippet) {
+                desc += ` — ${tool.promptSnippet}`;
+            }
+            if (tool.promptGuidelines && tool.promptGuidelines.length > 0) {
+                desc += '\nGuidelines: ' + tool.promptGuidelines.join('; ');
+            }
+            return {
+                type: 'function',
+                function: {
+                    name: tool.name,
+                    description: desc,
+                    parameters: tool.parameters,
+                },
+            };
+        });
     }
 }

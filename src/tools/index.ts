@@ -8,6 +8,7 @@ import { createGrepTool, createFindTool } from './search';
 import { createGitTools } from './git';
 import { createSubagentTool } from './subagent';
 import { createLsTool, createPwdTool, createContextTool, createDiagnosticsTool, createGetOpenEditorsTool, createReplaceInFileTool } from './vscode-tools';
+import { createAskUserQuestionTool } from './askUserQuestion';
 
 export function registerAllTools(registry: ToolRegistry, client?: LlmClient): void {
     // File operations
@@ -34,6 +35,9 @@ export function registerAllTools(registry: ToolRegistry, client?: LlmClient): vo
     registry.register(createContextTool());
     registry.register(createDiagnosticsTool());
     registry.register(createGetOpenEditorsTool());
+
+    // User interaction
+    registry.register(createAskUserQuestionTool());
 
     // Subagent (needs LlmClient + toolRegistry for tool access)
     if (client) {

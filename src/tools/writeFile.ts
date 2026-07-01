@@ -5,7 +5,9 @@ import { resolveSafePath } from '../utils/pathGuard';
 export function createWriteFileTool(): Tool {
     return {
         name: 'write_file',
-        description: 'Write content to a file. Creates it if it does not exist. Creates parent directories automatically.',
+        description: 'Create a new file or overwrite an existing file with the given content. Use with caution — overwrites completely.',
+        promptSnippet: 'Create or overwrite a file',
+        promptGuidelines: ['Only use for new files or complete rewrites; prefer edit_file for partial changes'],
         parameters: {
             type: 'object' as const,
             properties: {
