@@ -22,7 +22,7 @@
     "chat",
     "pi"
   ],
-  "enabledApiProposals": ["chatParticipant"],
+  "enabledApiProposals": [],
   "activationEvents": [],
   "main": "./out/extension.js",
   "icon": "images/icon.png",
