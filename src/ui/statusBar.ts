@@ -58,7 +58,11 @@ export class StatusBarManager {
 
         // Listen for events
         this.manager.on('event', (event: any) => {
-            if (event.type === 'status') { this.refreshStatus(event.data.status); }
+            if (event.type === 'status') {
+                this.refreshStatus(event.data.status);
+                // Clean up speed timer if stream was aborted (streamEnd never fires)
+                if (event.data.status === 'idle') { this.cleanupSpeedAfterAbort(); }
+            }
             if (event.type === 'streamStart') { this.onStreamStart(); }
             if (event.type === 'streamChunk') { this.onStreamChunk(event.data.content); }
             if (event.type === 'streamEnd') { this.onStreamEnd(); }
@@ -231,6 +235,16 @@ export class StatusBarManager {
         if (this.speedUpdateTimer) {
             clearInterval(this.speedUpdateTimer);
             this.speedUpdateTimer = undefined;
+        }
+    }
+
+    /** Clean up speed timer when stream is aborted (streamEnd never fires) */
+    private cleanupSpeedAfterAbort(): void {
+        if (this.speedUpdateTimer) {
+            this.clearSpeedTimer();
+            this.speedItem.hide();
+            this.streamStartTime = 0;
+            this.refreshContext();
         }
     }
 

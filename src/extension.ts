@@ -28,7 +28,9 @@ export function activate(context: vscode.ExtensionContext) {
     const changesProvider = new ChangesTreeProvider();
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('pi-agent.agentsView', agentsProvider),
-        vscode.window.registerTreeDataProvider('pi-agent.changesView', changesProvider)
+        vscode.window.registerTreeDataProvider('pi-agent.changesView', changesProvider),
+        agentsProvider,
+        changesProvider
     );
 
     // Status bar
@@ -417,4 +419,5 @@ function updateInlineCompletions(): void {
 export function deactivate() {
     logger?.info('Pi Agent deactivated');
     manager?.stop();
+    logger?.dispose();
 }

@@ -123,7 +123,8 @@ export class Session {
             // Trim summary to avoid growing indefinitely
             const summaryLines = this.compactedSummary.split('\n');
             if (summaryLines.length > 30) {
-                this.compactedSummary = `[${this.totalDropped - summaryLines.length + 30} earlier entries omitted]\n` + summaryLines.slice(-30).join('\n');
+                const omitted = summaryLines.length - 30;
+                this.compactedSummary = `[${omitted} earlier entries omitted]\n` + summaryLines.slice(-30).join('\n');
             }
         }
 

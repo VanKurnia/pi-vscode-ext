@@ -7,7 +7,7 @@ interface TrackedChange {
     timestamp: number;
 }
 
-export class ChangesTreeProvider implements vscode.TreeDataProvider<ChangeTreeItem> {
+export class ChangesTreeProvider implements vscode.TreeDataProvider<ChangeTreeItem>, vscode.Disposable {
     private _onDidChangeTreeData = new vscode.EventEmitter<ChangeTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
     private changes: Map<string, TrackedChange> = new Map();
@@ -39,6 +39,11 @@ export class ChangesTreeProvider implements vscode.TreeDataProvider<ChangeTreeIt
             return Promise.resolve(changes.map(c => new ChangeTreeItem(c.filePath, c.filePath, c.added, c.removed)));
         }
         return Promise.resolve([]);
+    }
+
+    dispose(): void {
+        this._onDidChangeTreeData.dispose();
+        if (this.refreshTimer) { clearTimeout(this.refreshTimer); }
     }
 }
 

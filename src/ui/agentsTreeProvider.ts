@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { PiAgentManager } from '../agent/manager';
 import { AgentConfig } from '../agent/agents';
 
-export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentTreeItem> {
+export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentTreeItem>, vscode.Disposable {
     private _onDidChangeTreeData = new vscode.EventEmitter<AgentTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
     private manager: PiAgentManager;
@@ -20,6 +20,8 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentTreeItem
         }
         return Promise.resolve([]);
     }
+
+    dispose(): void { this._onDidChangeTreeData.dispose(); }
 }
 
 class AgentTreeItem extends vscode.TreeItem {
