@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 // PiAgentManager replaced by bridge — using any for now
 import { getConfig } from '../utils/config.js';
+import type { AgentHarness, AgentHarnessEvent } from '@earendil-works/pi-agent-core';
 
 export class StatusBarManager {
     private statusItem: vscode.StatusBarItem;
@@ -8,7 +9,7 @@ export class StatusBarManager {
     private speedItem: vscode.StatusBarItem;
     private gitItem: vscode.StatusBarItem;       // pi-zentui: git branch + status
     private contextItem: vscode.StatusBarItem;    // pi-zentui: context usage
-    private manager: any;
+    private harness: AgentHarness;
 
     // Speed tracking state (pi-speeed equivalent)
     private streamStartTime: number = 0;
@@ -23,8 +24,8 @@ export class StatusBarManager {
     private hideSpeedTimer: ReturnType<typeof setTimeout> | undefined;
     private disposables: vscode.Disposable[] = [];
 
-    constructor(manager: any) {
-        this.manager = manager;
+    constructor(harness: AgentHarness) {
+        this.harness = harness;
 
         // Main status — left, priority 100
         this.statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -59,16 +60,24 @@ export class StatusBarManager {
         this.refreshContext();
 
         // Listen for events
-        this.manager.on('event', (event: any) => {
-            if (event.type === 'status') {
-                this.refreshStatus(event.data.status);
-                // Clean up speed timer if stream was aborted (streamEnd never fires)
-                if (event.data.status === 'idle') { this.cleanupSpeedAfterAbort(); }
+        this.harness.subscribe((event: AgentHarnessEvent) => {
+            // Map harness events to status bar updates
+            if (event.type === 'before_agent_start') {
+                this.refreshStatus('thinking');
             }
-            if (event.type === 'streamStart') { this.onStreamStart(); }
-            if (event.type === 'streamChunk') { this.onStreamChunk(event.data.content); }
-            if (event.type === 'streamEnd') { this.onStreamEnd(); }
-            if (event.type === 'userMessage' || event.type === 'assistantMessage') { this.refreshContext(); }
+            if (event.type === 'settled' || event.type === 'abort') {
+                this.refreshStatus('idle');
+                this.cleanupSpeedAfterAbort();
+            }
+            if (event.type === 'before_provider_request') {
+                this.onStreamStart();
+            }
+            if (event.type === 'after_provider_response') {
+                this.onStreamEnd();
+            }
+            if (event.type === 'context' || event.type === 'session_compact') {
+                this.refreshContext();
+            }
         });
 
         // Refresh git on file changes (debounced to 2s) — tracked for disposal
@@ -149,26 +158,13 @@ export class StatusBarManager {
 
     private refreshContext(): void {
         try {
-            const ctx = this.manager.getSessionContext();
-            const config = getConfig();
-            const maxTokens = config.agent.maxTokens * 3; // context window = 3x max output
-            const pct = Math.min(100, Math.round((ctx.estimatedTokens / maxTokens) * 100));
-
-            // pi-zentui style: show tokens used / max
-            const used = ctx.estimatedTokens >= 1000 ? (ctx.estimatedTokens / 1000).toFixed(1) + 'k' : String(ctx.estimatedTokens);
-            const max = maxTokens >= 1000 ? (maxTokens / 1000).toFixed(0) + 'k' : String(maxTokens);
-            this.contextItem.text = '$(database) ' + used + '/' + max;
-
-            // Color indicator based on usage
-            if (pct >= 90) {
-                this.contextItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
-            } else if (pct >= 70) {
-                this.contextItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
-            } else {
-                this.contextItem.backgroundColor = undefined;
-            }
-
-            this.contextItem.tooltip = `Context: ${pct}% used (${ctx.messageCount} messages, ~${used} tokens)\nModel: ${ctx.model}\nProvider: ${ctx.provider}`;
+            const model = this.harness.getModel();
+            const resources = this.harness.getResources();
+            const skillCount = (resources.skills ?? []).length;
+            const modelName = (model as any)?.name || (model as any)?.id || 'unknown';
+            this.contextItem.text = `$(database) ${skillCount} skills`;
+            this.contextItem.tooltip = `Model: ${modelName}\nSkills: ${skillCount}`;
+            this.contextItem.backgroundColor = undefined;
             this.contextItem.show();
         } catch {
             // ignore
