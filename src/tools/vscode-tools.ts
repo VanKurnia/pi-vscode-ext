@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 import { Tool } from '../agent/tools';
 import { resolveSafePath, getWorkspaceRoot } from '../utils/pathGuard';
 
@@ -19,18 +18,24 @@ export function createLsTool(): Tool {
         async execute(args: any) {
             try {
                 const dir = args?.path || getWorkspaceRoot();
-                const entries = fs.readdirSync(dir, { withFileTypes: true });
-                const lines = entries.map(e => {
-                    const prefix = e.isDirectory() ? '📁' : '📄';
+                // Validate path stays within workspace boundaries
+                if (args?.path) {
+                    const safe = resolveSafePath(args.path);
+                    if (safe.error) return { content: safe.error, isError: true };
+                }
+                const uri = vscode.Uri.file(dir);
+                const entries = await vscode.workspace.fs.readDirectory(uri);
+                const lines = await Promise.all(entries.map(async ([name, type]) => {
+                    const prefix = (type & vscode.FileType.Directory) ? '📁' : '📄';
                     let size = '';
-                    if (!e.isDirectory()) {
+                    if (!(type & vscode.FileType.Directory)) {
                         try {
-                            const stat = fs.statSync(path.join(dir, e.name));
+                            const stat = await vscode.workspace.fs.stat(vscode.Uri.file(path.join(dir, name)));
                             size = ' (' + formatSize(stat.size) + ')';
                         } catch { /* ignore */ }
                     }
-                    return prefix + ' ' + e.name + size;
-                });
+                    return prefix + ' ' + name + size;
+                }));
                 return { content: '**' + dir + ':**\n\n' + lines.join('\n') };
             } catch (e: any) { return { content: e.message, isError: true }; }
         },
@@ -217,12 +222,14 @@ export function createReplaceInFileTool(): Tool {
                 const safe = resolveSafePath(args.file_path);
                 if (safe.error) return { content: safe.error, isError: true };
                 const filePath = safe.resolved;
-                const content = fs.readFileSync(filePath, 'utf-8');
+                const uri = vscode.Uri.file(filePath);
+                const bytes = await vscode.workspace.fs.readFile(uri);
+                const content = Buffer.from(bytes).toString('utf-8');
                 if (!content.includes(args.old_string)) {
                     return { content: 'Text not found in file', isError: true };
                 }
                 const updated = content.replace(args.old_string, args.new_string);
-                fs.writeFileSync(filePath, updated, 'utf-8');
+                await vscode.workspace.fs.writeFile(uri, Buffer.from(updated, 'utf-8'));
                 return { content: '✅ Replaced in ' + path.basename(filePath) };
             } catch (e: any) { return { content: e.message, isError: true }; }
         },

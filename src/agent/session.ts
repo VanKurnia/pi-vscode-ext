@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 
 export interface TokenUsage {
@@ -90,14 +91,14 @@ export class Session {
     /** Save current state to JSONL file */
     private saveToDisk(): void {
         if (!this.persistPath) return;
-        try {
-            const lines: string[] = [];
-            for (const msg of this.messages) {
-                if (msg.role === 'system') continue; // don't persist system prompt
-                lines.push(JSON.stringify({ timestamp: Date.now(), type: 'message', message: msg } satisfies SessionEntry));
-            }
-            fs.writeFileSync(this.persistPath, lines.join('\n') + '\n', 'utf-8');
-        } catch { /* ignore write errors */ }
+        // Fire-and-forget async write to avoid blocking event loop
+        const lines: string[] = [];
+        for (const msg of this.messages) {
+            if (msg.role === 'system') continue; // don't persist system prompt
+            lines.push(JSON.stringify({ timestamp: Date.now(), type: 'message', message: msg } satisfies SessionEntry));
+        }
+        const data = lines.join('\n') + '\n';
+        fsp.writeFile(this.persistPath, data, 'utf-8').catch(() => { /* ignore write errors */ });
     }
 
     addUserMessage(content: string): void {
@@ -223,12 +224,10 @@ export class Session {
 
         this.totalDropped += droppedCount;
 
-        // Persist compaction entry to JSONL
+        // Persist compaction entry to JSONL (async)
         if (this.persistPath) {
-            try {
-                const entry: SessionEntry = { timestamp: Date.now(), type: 'compaction', summary, droppedCount };
-                fs.appendFileSync(this.persistPath, JSON.stringify(entry) + '\n', 'utf-8');
-            } catch { /* ignore */ }
+            const entry: SessionEntry = { timestamp: Date.now(), type: 'compaction', summary, droppedCount };
+            fsp.appendFile(this.persistPath, JSON.stringify(entry) + '\n', 'utf-8').catch(() => { /* ignore */ });
         }
         this.saveToDisk();
     }

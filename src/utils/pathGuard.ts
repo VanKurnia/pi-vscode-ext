@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as os from 'os';
 
 /**
  * Resolve a file path and validate it stays within workspace boundaries.
@@ -28,7 +29,6 @@ export function resolveSafePath(inputPath: string): { resolved: string; error?: 
     }
 
     // Also allow /tmp and system temp for test scenarios
-    const os = require('os');
     const tmpDir = path.resolve(os.tmpdir());
     if (normalized.startsWith(tmpDir)) {
         return { resolved: normalized };

@@ -21,7 +21,12 @@ export function createGrepTool(): Tool {
         async execute(args: any) {
             try {
                 const workspaceRoot = getWorkspaceRoot();
-                const searchPath = args.path ? (path.isAbsolute(args.path) ? args.path : path.join(workspaceRoot, args.path)) : workspaceRoot;
+                let searchPath = workspaceRoot;
+                if (args.path) {
+                    const safe = resolveSafePath(args.path);
+                    if (safe.error) return { content: safe.error, isError: true };
+                    searchPath = safe.resolved;
+                }
                 const maxResults = args.max_results || 50;
                 const regex = new RegExp(args.pattern, 'gi');
                 const files = await vscode.workspace.findFiles(new vscode.RelativePattern(searchPath, args.include || '**/*'), '**/node_modules/**', 1000);
@@ -73,7 +78,12 @@ export function createMultiGrepTool(): Tool {
                 if (!patterns || patterns.length === 0) return { content: 'No patterns provided', isError: true };
 
                 const workspaceRoot = getWorkspaceRoot();
-                const searchPath = args.path ? (path.isAbsolute(args.path) ? args.path : path.join(workspaceRoot, args.path)) : workspaceRoot;
+                let searchPath = workspaceRoot;
+                if (args.path) {
+                    const safe = resolveSafePath(args.path);
+                    if (safe.error) return { content: safe.error, isError: true };
+                    searchPath = safe.resolved;
+                }
                 const maxResults = args.max_results || 50;
                 const regexes = patterns.map(p => new RegExp(p, 'gi'));
                 const files = await vscode.workspace.findFiles(new vscode.RelativePattern(searchPath, args.include || '**/*'), '**/node_modules/**', 1000);

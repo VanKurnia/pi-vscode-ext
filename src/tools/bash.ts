@@ -3,7 +3,7 @@ import { spawn } from 'child_process';
 import { Tool } from '../agent/tools';
 import { getBashGuard } from './bashGuard';
 import { getConfig } from '../utils/config';
-import { getWorkspaceRoot } from '../utils/pathGuard';
+import { getWorkspaceRoot, resolveSafePath } from '../utils/pathGuard';
 
 export function createBashTool(): Tool {
     return {
@@ -28,7 +28,12 @@ export function createBashTool(): Tool {
                 if (!result.safe) { return { content: `⛔ Command blocked: ${result.reason}`, isError: true }; }
             }
 
-            const cwd = args.cwd || getWorkspaceRoot();
+            let cwd = getWorkspaceRoot();
+            if (args.cwd) {
+                const safe = resolveSafePath(args.cwd);
+                if (safe.error) return { content: 'Invalid cwd: ' + safe.error, isError: true };
+                cwd = safe.resolved;
+            }
             const timeout = (args.timeout || 120) * 1000;
 
             return new Promise((resolve) => {

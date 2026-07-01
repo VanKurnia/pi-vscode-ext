@@ -20,6 +20,8 @@ export class StatusBarManager {
 
     // Git tracking (pi-zentui equivalent)
     private gitRefreshTimer: ReturnType<typeof setInterval> | undefined;
+    private hideSpeedTimer: ReturnType<typeof setTimeout> | undefined;
+    private disposables: vscode.Disposable[] = [];
 
     constructor(manager: PiAgentManager) {
         this.manager = manager;
@@ -69,16 +71,17 @@ export class StatusBarManager {
             if (event.type === 'userMessage' || event.type === 'assistantMessage') { this.refreshContext(); }
         });
 
-        // Refresh git on file changes (debounced to 2s)
+        // Refresh git on file changes (debounced to 2s) — tracked for disposal
         let gitRefreshTimeout: ReturnType<typeof setTimeout> | undefined;
-        vscode.workspace.onDidChangeTextDocument(() => {
-            if (gitRefreshTimeout) clearTimeout(gitRefreshTimeout);
-            gitRefreshTimeout = setTimeout(() => this.refreshGit(), 2000);
-        });
-
-        vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('pi-agent')) { this.refreshModel(); }
-        });
+        this.disposables.push(
+            vscode.workspace.onDidChangeTextDocument(() => {
+                if (gitRefreshTimeout) clearTimeout(gitRefreshTimeout);
+                gitRefreshTimeout = setTimeout(() => this.refreshGit(), 2000);
+            }),
+            vscode.workspace.onDidChangeConfiguration(e => {
+                if (e.affectsConfiguration('pi-agent')) { this.refreshModel(); }
+            })
+        );
 
         // Periodic git refresh every 30s
         this.gitRefreshTimer = setInterval(() => this.refreshGit(), 30000);
@@ -212,7 +215,8 @@ export class StatusBarManager {
             ].join('\n');
 
             // Hide after 5 seconds, then refresh context
-            setTimeout(() => {
+            this.hideSpeedTimer = setTimeout(() => {
+                this.hideSpeedTimer = undefined;
                 this.speedItem.hide();
                 this.refreshContext();
             }, 5000);
@@ -250,7 +254,10 @@ export class StatusBarManager {
 
     dispose(): void {
         this.clearSpeedTimer();
+        if (this.hideSpeedTimer) { clearTimeout(this.hideSpeedTimer); this.hideSpeedTimer = undefined; }
         if (this.gitRefreshTimer) { clearInterval(this.gitRefreshTimer); }
+        for (const d of this.disposables) { d.dispose(); }
+        this.disposables = [];
         this.statusItem.dispose();
         this.modelItem.dispose();
         this.speedItem.dispose();

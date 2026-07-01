@@ -416,8 +416,9 @@ function updateInlineCompletions(): void {
     }
 }
 
-export function deactivate() {
+export function deactivate(): void {
     logger?.info('Pi Agent deactivated');
-    manager?.stop();
+    statusBar?.dispose();
+    manager?.dispose();
     logger?.dispose();
 }

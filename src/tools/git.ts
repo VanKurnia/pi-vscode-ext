@@ -1,11 +1,16 @@
 import * as vscode from 'vscode';
 import { spawn } from 'child_process';
 import { Tool } from '../agent/tools';
-import { getWorkspaceRoot } from '../utils/pathGuard';
+import { getWorkspaceRoot, resolveSafePath } from '../utils/pathGuard';
 
 function runGit(args: string[], cwd?: string): Promise<string> {
     return new Promise((resolve, reject) => {
-        const repoPath = cwd || getWorkspaceRoot();
+        let repoPath = cwd || getWorkspaceRoot();
+        if (cwd) {
+            const safe = resolveSafePath(cwd);
+            if (safe.error) { reject(new Error('Invalid repo_path: ' + safe.error)); return; }
+            repoPath = safe.resolved;
+        }
         const child = spawn('git', args, { cwd: repoPath, timeout: 30000 });
         let stdout = ''; let stderr = '';
         child.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });

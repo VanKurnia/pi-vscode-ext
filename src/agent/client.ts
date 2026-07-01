@@ -29,6 +29,7 @@ export class LlmClient {
         tools?: any[];
         maxTokens?: number;
         temperature?: number;
+        signal?: AbortSignal;
     }): Promise<any> {
         const config = getConfig();
         const body = {
@@ -69,6 +70,11 @@ export class LlmClient {
             });
             req.on('error', (err) => reject(err));
             req.on('timeout', () => { req.destroy(); reject(new Error('Request timeout')); });
+
+            if (options?.signal) {
+                options.signal.addEventListener('abort', () => { req.destroy(); reject(new Error('Aborted')); });
+            }
+
             req.write(bodyStr);
             req.end();
         });

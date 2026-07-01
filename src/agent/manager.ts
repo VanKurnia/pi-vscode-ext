@@ -151,20 +151,55 @@ export class PiAgentManager extends EventEmitter implements Disposable {
         const agentSession = new Session(agent.systemPrompt || buildSystemPrompt());
         agentSession.addUserMessage(task);
         this.isProcessing = true;
+        this.abortController = new AbortController();
         this.emitEvent('status', { status: 'thinking', agent: agentName });
         this.emitEvent('toolCall', { name: 'subagent', arguments: { agent: agentName, task } });
 
         try {
             const toolNames = agent.tools.length > 0 ? agent.tools : undefined;
             const tools = this.toolRegistry.toFunctionDefinitions(toolNames);
-            const response = await this.client.chatCompletion(agentSession.getMessagesForApi(), { model, tools: tools.length > 0 ? tools : undefined });
-            const msg = response.choices?.[0]?.message;
-            if (msg?.content) {
-                this.emitEvent('assistantMessage', { content: msg.content, agent: agentName });
+            const maxIterations = 10;
+            let iterations = 0;
+            let hasMoreToolCalls = true;
+
+            while (hasMoreToolCalls && iterations < maxIterations) {
+                iterations++;
+                const response = await this.client.chatCompletion(
+                    agentSession.getMessagesForApi(),
+                    { model, tools: tools.length > 0 ? tools : undefined, maxTokens: 4096 }
+                );
+                const msg = response.choices?.[0]?.message;
+                if (!msg) break;
+
+                agentSession.addAssistantMessage(msg.content || null, msg.tool_calls || undefined);
+
+                if (msg.tool_calls && msg.tool_calls.length > 0) {
+                    // Execute tool calls for the agent (pi-compatible tool loop)
+                    for (const tc of msg.tool_calls) {
+                        const fn = tc.function;
+                        let toolArgs: any;
+                        try { toolArgs = JSON.parse(fn.arguments || '{}'); } catch { toolArgs = {}; }
+                        this.emitEvent('toolCall', { id: tc.id, name: fn.name, arguments: toolArgs });
+
+                        const result = await this.toolRegistry.executeTool(fn.name, toolArgs, this.abortController?.signal);
+                        agentSession.addToolResult(tc.id, fn.name, result.content);
+                        this.emitEvent('toolResult', { id: tc.id, name: fn.name, content: result.content, isError: result.isError });
+                    }
+                    hasMoreToolCalls = true;
+                } else {
+                    hasMoreToolCalls = false;
+                    if (msg.content) {
+                        this.emitEvent('assistantMessage', { content: msg.content, agent: agentName });
+                    }
+                }
             }
         } catch (err: any) {
-            this.logger.error('Agent error: ' + err.message, err);
-            this.emitEvent('error', { message: err.message });
+            if (err.name === 'AbortError' || err.message === 'Aborted') {
+                this.emitEvent('assistantMessage', { content: '*[' + agentName + ' stopped by user]*' });
+            } else {
+                this.logger.error('Agent error: ' + err.message, err);
+                this.emitEvent('error', { message: err.message });
+            }
         } finally {
             this.isProcessing = false;
             this.abortController = null;
@@ -219,11 +254,7 @@ export class PiAgentManager extends EventEmitter implements Disposable {
                 totalTokens: usage.total_tokens || 0,
             } : undefined;
 
-            // Build assistant message with content
-            if (msg?.content) {
-                this.emitEvent('streamChunk', { content: msg.content });
-            }
-
+            // Note: content was already streamed via delta chunks above — don't re-emit.
             this.session.addAssistantMessage(
                 msg?.content || null,
                 msg?.tool_calls || undefined,

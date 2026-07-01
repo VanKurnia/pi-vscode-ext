@@ -54,7 +54,7 @@ export class InlineCompletionProvider implements vscode.InlineCompletionItemProv
             ];
 
             const response = await this.client.chatCompletion(messages, { model, maxTokens: 150, temperature: 0.3 });
-            if (token.isCancellationRequested || this.pendingCancellation?.token.isCancellationRequested) { return undefined; }
+            if (token.isCancellationRequested) { return undefined; }
 
             let completion = response.choices[0]?.message?.content || '';
             completion = completion.replace(/^```\w*\n?/gm, '').replace(/\n?```$/gm, '').trimStart();
