@@ -28,6 +28,12 @@ export {
 // Stream bridge — harness events → VSCode ChatResponseStream
 export { streamFromHarness } from './stream-bridge';
 
+// UI bridge — VSCode dialogs for agent interaction
+export { createUIBridge, type UIBridge } from './ui-bridge';
+
+// Command bridge — register agent commands with VSCode command palette
+export { registerAgentCommands } from './command-bridge';
+
 // Types
 export type {
     PiBridgeConfig,
