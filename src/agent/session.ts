@@ -1,3 +1,6 @@
+import * as fs from 'fs';
+import * as path from 'path';
+
 export interface TokenUsage {
     input: number;
     output: number;
@@ -18,6 +21,15 @@ export interface ChatMessage {
     stopReason?: string;
 }
 
+/** JSONL entry for session persistence (pi-compatible) */
+interface SessionEntry {
+    timestamp: number;
+    type: 'message' | 'compaction';
+    message?: ChatMessage;
+    summary?: string;
+    droppedCount?: number;
+}
+
 /** Prefix/suffix matching pi's compaction format */
 const COMPACTION_SUMMARY_PREFIX = `The conversation history before this point was compacted into the following summary:\n\n<summary>\n`;
 const COMPACTION_SUMMARY_SUFFIX = `\n</summary>`;
@@ -26,6 +38,8 @@ export class Session {
     private messages: ChatMessage[] = [];
     private systemPrompt: string;
     private totalDropped: number = 0;
+    /** JSONL persistence path (pi-compatible) */
+    private persistPath: string | null = null;
 
     constructor(systemPrompt: string) {
         this.systemPrompt = systemPrompt;
@@ -34,8 +48,61 @@ export class Session {
         }
     }
 
+    /**
+     * Enable JSONL persistence (pi-compatible session storage).
+     * Saves to .pi-agent/session.jsonl in workspace root.
+     */
+    enablePersistence(workspacePath: string): void {
+        const dir = path.join(workspacePath, '.pi-agent');
+        if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); }
+        this.persistPath = path.join(dir, 'session.jsonl');
+        this.loadFromDisk();
+    }
+
+    /** Load session from JSONL file */
+    private loadFromDisk(): void {
+        if (!this.persistPath || !fs.existsSync(this.persistPath)) return;
+        try {
+            const content = fs.readFileSync(this.persistPath, 'utf-8');
+            const lines = content.split('\n').filter(l => l.trim());
+            if (lines.length === 0) return;
+
+            this.messages = [];
+            if (this.systemPrompt) {
+                this.messages.push({ role: 'system', content: this.systemPrompt });
+            }
+
+            for (const line of lines) {
+                try {
+                    const entry: SessionEntry = JSON.parse(line);
+                    if (entry.type === 'message' && entry.message) {
+                        this.messages.push(entry.message);
+                    } else if (entry.type === 'compaction' && entry.summary) {
+                        const summaryContent = COMPACTION_SUMMARY_PREFIX + entry.summary + COMPACTION_SUMMARY_SUFFIX;
+                        this.messages.push({ role: 'user', content: summaryContent });
+                        this.totalDropped += entry.droppedCount || 0;
+                    }
+                } catch { /* skip malformed lines */ }
+            }
+        } catch { /* ignore read errors */ }
+    }
+
+    /** Save current state to JSONL file */
+    private saveToDisk(): void {
+        if (!this.persistPath) return;
+        try {
+            const lines: string[] = [];
+            for (const msg of this.messages) {
+                if (msg.role === 'system') continue; // don't persist system prompt
+                lines.push(JSON.stringify({ timestamp: Date.now(), type: 'message', message: msg } satisfies SessionEntry));
+            }
+            fs.writeFileSync(this.persistPath, lines.join('\n') + '\n', 'utf-8');
+        } catch { /* ignore write errors */ }
+    }
+
     addUserMessage(content: string): void {
         this.messages.push({ role: 'user', content });
+        this.saveToDisk();
     }
 
     addAssistantMessage(content: string | null, toolCalls?: any[], usage?: TokenUsage, stopReason?: string): void {
@@ -44,10 +111,12 @@ export class Session {
         if (usage) { msg.usage = usage; }
         if (stopReason) { msg.stopReason = stopReason; }
         this.messages.push(msg);
+        this.saveToDisk();
     }
 
     addToolResult(toolCallId: string, name: string, content: string): void {
         this.messages.push({ role: 'tool', content, tool_call_id: toolCallId, name });
+        this.saveToDisk();
     }
 
     getMessagesForApi(): any[] {
@@ -136,19 +205,16 @@ export class Session {
     /**
      * Replace compacted messages with LLM-generated summary (pi-compatible).
      * Keeps the system prompt and most recent messages.
-     * Returns the compaction summary for the caller to send to LLM.
      */
     applyCompaction(summary: string, keepRecentCount: number = 10): void {
-        if (this.messages.length <= keepRecentCount + 1) return; // system + recent
+        if (this.messages.length <= keepRecentCount + 1) return;
 
         const systemMsg = this.messages[0];
         const recentMessages = this.messages.slice(-keepRecentCount);
         const droppedCount = this.messages.length - 1 - keepRecentCount;
 
-        // Build compaction summary message (pi-compatible format)
         const summaryContent = COMPACTION_SUMMARY_PREFIX + summary + COMPACTION_SUMMARY_SUFFIX;
 
-        // Reconstruct: system → compaction summary → recent messages
         this.messages = [
             systemMsg,
             { role: 'user', content: summaryContent },
@@ -156,6 +222,15 @@ export class Session {
         ];
 
         this.totalDropped += droppedCount;
+
+        // Persist compaction entry to JSONL
+        if (this.persistPath) {
+            try {
+                const entry: SessionEntry = { timestamp: Date.now(), type: 'compaction', summary, droppedCount };
+                fs.appendFileSync(this.persistPath, JSON.stringify(entry) + '\n', 'utf-8');
+            } catch { /* ignore */ }
+        }
+        this.saveToDisk();
     }
 
     /**
@@ -180,7 +255,6 @@ export class Session {
                 }
                 dropped++;
             }
-            // Keep tool_call + tool_result pairs together
             if (removed?.role === 'assistant' && removed.tool_calls) {
                 while (nonSystem.length > 2 && nonSystem[0]?.role === 'tool') {
                     const toolMsg = nonSystem.shift();
@@ -195,8 +269,16 @@ export class Session {
         if (dropped > 0) {
             this.totalDropped += dropped;
             this.messages = [systemMsg, ...nonSystem];
+            this.saveToDisk();
         }
         return dropped;
+    }
+
+    /** Delete session file */
+    deletePersistedSession(): void {
+        if (this.persistPath && fs.existsSync(this.persistPath)) {
+            try { fs.unlinkSync(this.persistPath); } catch { /* ignore */ }
+        }
     }
 
     clear(): void {
@@ -204,5 +286,6 @@ export class Session {
         if (this.systemPrompt) {
             this.messages.push({ role: 'system', content: this.systemPrompt });
         }
+        this.deletePersistedSession();
     }
 }

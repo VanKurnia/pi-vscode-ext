@@ -1,5 +1,6 @@
 export interface Tool {
     name: string;
+    label?: string;
     description: string;
     /** Short snippet for when to use this tool (pi-agent-setup pattern) */
     promptSnippet?: string;
@@ -10,7 +11,9 @@ export interface Tool {
         properties: Record<string, any>;
         required?: string[];
     };
-    execute: (args: any, signal?: AbortSignal) => Promise<{ content: string; isError?: boolean }>;
+    /** Execution mode: sequential (default) or parallel (pi-compatible) */
+    executionMode?: 'sequential' | 'parallel';
+    execute: (args: any, signal?: AbortSignal) => Promise<{ content: string; isError?: boolean; terminate?: boolean }>;
 }
 
 export class ToolRegistry {

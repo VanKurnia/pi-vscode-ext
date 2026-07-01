@@ -5,6 +5,7 @@ import { resolveSafePath } from '../utils/pathGuard';
 export function createReadFileTool(): Tool {
     return {
         name: 'read_file',
+        executionMode: 'parallel',
         description: 'Read file content with line numbers, offset/limit support. Returns file content with line numbers.',
         promptSnippet: 'Read a file to understand its contents',
         promptGuidelines: ['Always read before editing to understand existing code', 'Use offset/limit for large files'],

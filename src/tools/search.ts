@@ -6,6 +6,7 @@ import { resolveSafePath, getWorkspaceRoot } from '../utils/pathGuard';
 export function createGrepTool(): Tool {
     return {
         name: 'grep',
+        executionMode: 'parallel',
         description: 'Search file contents using regex pattern. Returns matching lines with file paths and line numbers.',
         parameters: {
             type: 'object' as const,
@@ -49,6 +50,7 @@ export function createGrepTool(): Tool {
 export function createMultiGrepTool(): Tool {
     return {
         name: 'multi_grep',
+        executionMode: 'parallel',
         description: 'Search file contents for multiple patterns with OR logic (any pattern matches). Equivalent to pi-fff fff-multi-grep — uses Aho-Corasick multi-pattern matching.',
         promptSnippet: 'Search for multiple patterns at once',
         promptGuidelines: [
@@ -106,6 +108,7 @@ export function createMultiGrepTool(): Tool {
 export function createFindTool(): Tool {
     return {
         name: 'find',
+        executionMode: 'parallel',
         description: 'Find files by glob pattern.',
         parameters: {
             type: 'object' as const,

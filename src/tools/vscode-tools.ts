@@ -7,6 +7,7 @@ import { resolveSafePath, getWorkspaceRoot } from '../utils/pathGuard';
 export function createLsTool(): Tool {
     return {
         name: 'ls',
+        executionMode: 'parallel',
         description: 'List directory contents with file sizes and types',
         parameters: {
             type: 'object' as const,
@@ -39,6 +40,7 @@ export function createLsTool(): Tool {
 export function createPwdTool(): Tool {
     return {
         name: 'pwd',
+        executionMode: 'parallel',
         description: 'Show current workspace root directory',
         parameters: { type: 'object' as const, properties: {}, required: [] },
         async execute() {
@@ -50,6 +52,7 @@ export function createPwdTool(): Tool {
 export function createContextTool(): Tool {
     return {
         name: 'context',
+        executionMode: 'parallel',
         description: 'Show current workspace context: active file, cursor/selection, open files, diagnostics. Equivalent to pi-x-ide IDE context integration.',
         promptSnippet: 'Get current editor context',
         promptGuidelines: [
@@ -141,6 +144,7 @@ export function createContextTool(): Tool {
 export function createDiagnosticsTool(): Tool {
     return {
         name: 'get_diagnostics',
+        executionMode: 'parallel',
         description: 'Get compiler/linter diagnostics (errors, warnings) for open files',
         parameters: {
             type: 'object' as const,
@@ -171,6 +175,7 @@ export function createDiagnosticsTool(): Tool {
 export function createGetOpenEditorsTool(): Tool {
     return {
         name: 'get_open_editors',
+        executionMode: 'parallel',
         description: 'List all currently open editor tabs/files',
         parameters: { type: 'object' as const, properties: {}, required: [] },
         async execute() {

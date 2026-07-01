@@ -86,6 +86,7 @@ function formatFetchResponse(payload: unknown, maxCharacters: number): string {
 export function createWebSearchTool(): Tool {
     return {
         name: 'web_search',
+        executionMode: 'parallel',
         description: 'Search the web through 9router proxy. Returns web search results with titles, URLs, and snippets.',
         promptSnippet: 'Search the web for information',
         promptGuidelines: [
@@ -120,6 +121,7 @@ export function createWebSearchTool(): Tool {
 export function createWebFetchTool(): Tool {
     return {
         name: 'web_fetch',
+        executionMode: 'parallel',
         description: 'Fetch and extract content from a URL through 9router proxy. Returns the page content in markdown format.',
         promptSnippet: 'Fetch a web page',
         promptGuidelines: [

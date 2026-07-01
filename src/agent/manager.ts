@@ -73,6 +73,11 @@ export class PiAgentManager extends EventEmitter implements Disposable {
         this.session = new Session(buildSystemPrompt());
         registerAllTools(this.toolRegistry, this.client, () => this.session);
         this.refreshAgents();
+
+        // Enable JSONL persistence (pi-compatible)
+        const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (ws) { this.session.enablePersistence(ws); }
+
         this.logger.info('PiAgentManager initialized');
     }
 
@@ -231,8 +236,8 @@ export class PiAgentManager extends EventEmitter implements Disposable {
             }
 
             if (finishReason === 'tool_calls' && msg?.tool_calls && msg.tool_calls.length > 0) {
-                hasMoreToolCalls = true;
-                await this.executeToolCalls(msg.tool_calls);
+                const shouldTerminate = await this.executeToolCalls(msg.tool_calls);
+                hasMoreToolCalls = !shouldTerminate;
             } else {
                 hasMoreToolCalls = false;
             }
@@ -249,37 +254,90 @@ export class PiAgentManager extends EventEmitter implements Disposable {
         }
     }
 
-    private async executeToolCalls(toolCalls: any[]): Promise<void> {
-        for (const toolCall of toolCalls) {
-            const fn = toolCall.function;
-            if (!fn) continue;
+    private async executeToolCalls(toolCalls: any[]): Promise<boolean> {
+        // Group tool calls: sequential tools run one-at-a-time, parallel tools run concurrently (pi-compatible)
+        const signal = this.abortController?.signal;
+        let shouldTerminate = false;
 
+        // Parse all tool calls and determine their execution mode
+        const parsed = toolCalls.map(tc => {
+            const fn = tc.function;
+            if (!fn) return null;
             let args: any = {};
             try { args = JSON.parse(fn.arguments || '{}'); } catch { /* empty */ }
-
-            this.emitEvent('toolCall', { id: toolCall.id, name: fn.name, arguments: args });
-
             const tool = this.toolRegistry.get(fn.name);
-            if (!tool) {
-                const errorContent = `Tool not found: ${fn.name}`;
-                this.session.addToolResult(toolCall.id, fn.name, errorContent);
-                this.emitEvent('toolResult', { id: toolCall.id, name: fn.name, content: errorContent, isError: true });
-                continue;
-            }
+            return { tc, fn, args, tool, mode: tool?.executionMode || 'sequential' };
+        }).filter(Boolean) as Array<{ tc: any; fn: any; args: any; tool: any; mode: string }>;
 
-            try {
-                // Pass abort signal to tools (pi-compatible)
-                const result = await tool.execute(args, this.abortController?.signal);
-                const content = typeof result === 'string' ? result : (result?.content || JSON.stringify(result));
-                const isError = typeof result === 'object' && result?.isError;
-                this.session.addToolResult(toolCall.id, fn.name, content);
-                this.emitEvent('toolResult', { id: toolCall.id, name: fn.name, content, isError });
-            } catch (err: any) {
-                const errorContent = `Tool error: ${err.message}`;
-                this.session.addToolResult(toolCall.id, fn.name, errorContent);
-                this.emitEvent('toolResult', { id: toolCall.id, name: fn.name, content: errorContent, isError: true });
+        // Execute: sequential tools one by one, parallel tools as a batch
+        let i = 0;
+        while (i < parsed.length) {
+            if (signal?.aborted) break;
+
+            const item = parsed[i];
+
+            if (item.mode === 'parallel') {
+                // Collect all consecutive parallel tools into one batch
+                const batch: typeof parsed = [];
+                while (i < parsed.length && parsed[i].mode === 'parallel') {
+                    batch.push(parsed[i]);
+                    i++;
+                }
+
+                // Execute entire batch concurrently
+                const results = await Promise.allSettled(batch.map(async (item) => {
+                    this.emitEvent('toolCall', { id: item.tc.id, name: item.fn.name, arguments: item.args });
+                    if (!item.tool) {
+                        throw new Error(`Tool not found: ${item.fn.name}`);
+                    }
+                    const result = await item.tool.execute(item.args, signal);
+                    return { item, result };
+                }));
+
+                for (const settled of results) {
+                    if (settled.status === 'fulfilled') {
+                        const { item: it, result } = settled.value;
+                        const content = typeof result === 'string' ? result : (result?.content || JSON.stringify(result));
+                        const isError = typeof result === 'object' && result?.isError;
+                        if (typeof result === 'object' && result?.terminate) { shouldTerminate = true; }
+                        this.session.addToolResult(it.tc.id, it.fn.name, content);
+                        this.emitEvent('toolResult', { id: it.tc.id, name: it.fn.name, content, isError });
+                    } else {
+                        const it = batch[results.indexOf(settled)];
+                        const errorContent = `Tool error: ${settled.reason?.message || 'unknown'}`;
+                        this.session.addToolResult(it.tc.id, it.fn.name, errorContent);
+                        this.emitEvent('toolResult', { id: it.tc.id, name: it.fn.name, content: errorContent, isError: true });
+                    }
+                }
+            } else {
+                // Sequential: execute one tool at a time
+                this.emitEvent('toolCall', { id: item.tc.id, name: item.fn.name, arguments: item.args });
+
+                if (!item.tool) {
+                    const errorContent = `Tool not found: ${item.fn.name}`;
+                    this.session.addToolResult(item.tc.id, item.fn.name, errorContent);
+                    this.emitEvent('toolResult', { id: item.tc.id, name: item.fn.name, content: errorContent, isError: true });
+                    i++;
+                    continue;
+                }
+
+                try {
+                    const result = await item.tool.execute(item.args, signal);
+                    const content = typeof result === 'string' ? result : (result?.content || JSON.stringify(result));
+                    const isError = typeof result === 'object' && result?.isError;
+                    if (typeof result === 'object' && result?.terminate) { shouldTerminate = true; }
+                    this.session.addToolResult(item.tc.id, item.fn.name, content);
+                    this.emitEvent('toolResult', { id: item.tc.id, name: item.fn.name, content, isError });
+                } catch (err: any) {
+                    const errorContent = `Tool error: ${err.message}`;
+                    this.session.addToolResult(item.tc.id, item.fn.name, errorContent);
+                    this.emitEvent('toolResult', { id: item.tc.id, name: item.fn.name, content: errorContent, isError: true });
+                }
+                i++;
             }
         }
+
+        return shouldTerminate;
     }
 
     /**

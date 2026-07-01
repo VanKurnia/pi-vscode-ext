@@ -8,6 +8,7 @@ import { Session, ChatMessage } from '../agent/session';
 export function createRecallTool(getSession: () => Session): Tool {
     return {
         name: 'recall',
+        executionMode: 'parallel',
         description: 'Search and recall previous conversation history. Find earlier messages, tool calls, and results by text search or message index.',
         promptSnippet: 'Search conversation history',
         promptGuidelines: [

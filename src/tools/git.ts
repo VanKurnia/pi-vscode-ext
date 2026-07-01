@@ -21,6 +21,7 @@ function runGit(args: string[], cwd?: string): Promise<string> {
 const gitTools: Tool[] = [
     {
         name: 'git_status',
+        executionMode: 'parallel',
         description: 'Shows the working tree status',
         promptSnippet: 'Check git working tree status',
         promptGuidelines: ['Use this to check what files are modified, staged, or untracked before other git operations'],
@@ -34,6 +35,7 @@ const gitTools: Tool[] = [
     },
     {
         name: 'git_diff_unstaged',
+        executionMode: 'parallel',
         description: 'Shows unstaged changes in working directory not yet staged',
         promptSnippet: 'Show unstaged changes in working directory',
         promptGuidelines: ['Shows changes not yet staged — use to review local edits before committing'],
@@ -48,6 +50,7 @@ const gitTools: Tool[] = [
     },
     {
         name: 'git_diff_staged',
+        executionMode: 'parallel',
         description: 'Shows staged changes ready for commit',
         promptSnippet: 'Show staged changes ready for commit',
         promptGuidelines: ['Use after git_add to review what will be committed'],
@@ -62,6 +65,7 @@ const gitTools: Tool[] = [
     },
     {
         name: 'git_diff',
+        executionMode: 'parallel',
         description: 'Shows all uncommitted changes (staged + unstaged combined)',
         promptSnippet: 'Show all uncommitted changes for review',
         promptGuidelines: ['Use for a comprehensive view of all pending changes before commit'],
@@ -118,6 +122,7 @@ const gitTools: Tool[] = [
     },
     {
         name: 'git_log',
+        executionMode: 'parallel',
         description: 'Show commit log',
         parameters: { type: 'object' as const, properties: { repo_path: { type: 'string', description: 'Path to repo' }, count: { type: 'number', description: 'Number of entries' } }, required: [] },
         async execute(args: any) {
@@ -152,6 +157,7 @@ const gitTools: Tool[] = [
     },
     {
         name: 'git_branch',
+        executionMode: 'parallel',
         description: 'List all branches',
         parameters: { type: 'object' as const, properties: { repo_path: { type: 'string', description: 'Path to repo' } }, required: [] },
         async execute(args: any) {
@@ -163,6 +169,7 @@ const gitTools: Tool[] = [
     },
     {
         name: 'git_show',
+        executionMode: 'parallel',
         description: 'Show a specific commit',
         parameters: { type: 'object' as const, properties: { ref: { type: 'string', description: 'Commit hash/branch/tag (default: HEAD)' }, repo_path: { type: 'string', description: 'Path to repo' } }, required: [] },
         async execute(args: any) {
