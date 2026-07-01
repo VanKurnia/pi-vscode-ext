@@ -6,3 +6,6 @@ node_modules/
 *.log
 dist/
 out/
+
+# Session persistence
+.pi-agent/
