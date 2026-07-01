@@ -127,6 +127,19 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     chatParticipant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'images', 'icon.svg');
+
+    // Followup suggestions after each response
+    chatParticipant.followupProvider = {
+        provideFollowups(_result: vscode.ChatResult, _ctx: vscode.ChatContext, _token: vscode.CancellationToken): vscode.ChatFollowup[] {
+            return [
+                { prompt: '/fix', label: '🔧 Fix issues', command: 'fix' },
+                { prompt: '/refactor', label: '♻️ Refactor', command: 'refactor' },
+                { prompt: '/test', label: '🧪 Generate tests', command: 'test' },
+                { prompt: '/review', label: '👁️ Review code', command: 'review' },
+            ];
+        }
+    };
+
     context.subscriptions.push(chatParticipant);
     logger.info('Chat participant registered');
 
