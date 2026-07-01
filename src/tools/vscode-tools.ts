@@ -50,9 +50,14 @@ export function createPwdTool(): Tool {
 export function createContextTool(): Tool {
     return {
         name: 'context',
-        description: 'Show current workspace context: open files, git branch, diagnostics',
-        parameters: { type: 'object' as const, properties: {}, required: [] },
-        async execute() {
+        description: 'Show current workspace context: active file, cursor/selection, open files, diagnostics. Equivalent to pi-x-ide IDE context integration.',
+        promptSnippet: 'Get current editor context',
+        promptGuidelines: [
+            'Use to understand what the user is currently looking at',
+            'Returns cursor position, selection content, and active file info',
+        ],
+        parameters: { type: 'object' as const, properties: { include_content: { type: 'boolean', description: 'Include a preview of the active file content (default: false)' } }, required: [] },
+        async execute(args: any) {
             const parts: string[] = [];
 
             // Workspace
@@ -61,19 +66,61 @@ export function createContextTool(): Tool {
                 parts.push('**Workspace:** ' + folders.map((f: any) => f.name).join(', '));
             }
 
-            // Active file
+            // Active editor — enhanced with pi-x-ide style context
             const editor = vscode.window.activeTextEditor;
             if (editor) {
                 const doc = editor.document;
-                parts.push('**Active file:** ' + doc.fileName);
+                const wsRoot = getWorkspaceRoot();
+                const relPath = path.relative(wsRoot, doc.fileName);
+                parts.push('**Active file:** ' + relPath);
                 parts.push('**Language:** ' + doc.languageId);
+                parts.push('**Line count:** ' + doc.lineCount);
+
+                // Cursor position (pi-x-ide style)
+                const pos = editor.selection.active;
+                parts.push('**Cursor:** L' + (pos.line + 1) + ':C' + (pos.character + 1));
+
+                // Selection details
                 if (!editor.selection.isEmpty) {
-                    const sel = editor.document.getText(editor.selection);
-                    parts.push('**Selection:** ' + sel.split('\n').length + ' lines');
+                    const sel = editor.selection;
+                    const selText = doc.getText(sel);
+                    const selLines = selText.split('\n');
+                    parts.push('**Selection:** L' + (sel.start.line + 1) + ':C' + (sel.start.character + 1) + ' → L' + (sel.end.line + 1) + ':C' + (sel.end.character + 1) + ' (' + selLines.length + ' lines, ' + selText.length + ' chars)');
+                    if (selText.length < 500) {
+                        parts.push('```' + doc.languageId + '\n' + selText + '\n```');
+                    }
                 }
+
+                // Context around cursor (surrounding lines)
+                const ctxStart = Math.max(0, pos.line - 5);
+                const ctxEnd = Math.min(doc.lineCount - 1, pos.line + 5);
+                const ctxLines: string[] = [];
+                for (let i = ctxStart; i <= ctxEnd; i++) {
+                    const marker = i === pos.line ? ' → ' : '   ';
+                    ctxLines.push(marker + (i + 1) + ': ' + doc.lineAt(i).text);
+                }
+                parts.push('**Context around cursor:**\n```' + doc.languageId + '\n' + ctxLines.join('\n') + '\n```');
+
+                // Include full file content if requested
+                if (args?.include_content && doc.lineCount <= 500) {
+                    parts.push('**Full file content:**\n```' + doc.languageId + '\n' + doc.getText() + '\n```');
+                }
+            } else {
+                parts.push('**No active editor**');
             }
 
-            // Diagnostics
+            // All open editors (not just visible)
+            const openEditors: string[] = [];
+            for (const e of vscode.window.visibleTextEditors) {
+                if (e !== editor) {
+                    openEditors.push(path.relative(getWorkspaceRoot(), e.document.fileName));
+                }
+            }
+            if (openEditors.length > 0) {
+                parts.push('**Open editors:** ' + openEditors.join(', '));
+            }
+
+            // Diagnostics summary
             const diags = vscode.languages.getDiagnostics();
             let errors = 0, warnings = 0;
             for (const [, diagsList] of diags) {
@@ -82,7 +129,9 @@ export function createContextTool(): Tool {
                     if (d.severity === vscode.DiagnosticSeverity.Warning) warnings++;
                 }
             }
-            parts.push('**Diagnostics:** ' + errors + ' errors, ' + warnings + ' warnings');
+            if (errors > 0 || warnings > 0) {
+                parts.push('**Diagnostics:** ' + errors + ' errors, ' + warnings + ' warnings');
+            }
 
             return { content: parts.join('\n') };
         },
