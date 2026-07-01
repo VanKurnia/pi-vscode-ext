@@ -12,8 +12,18 @@ import { createAskUserQuestionTool } from './askUserQuestion';
 import { createWebSearchTool, createWebFetchTool } from './webTools';
 import { createRecallTool } from './recall';
 import { Session } from '../agent/session';
+import { createDbTools } from './dbTools';
+import { createSkillTools } from './skillTools';
+import { createTodoTool } from './todoTool';
+import { SkillDiscovery } from '../agent/skills';
+import { TodoTreeProvider } from '../ui/todoProvider';
 
-export function registerAllTools(registry: ToolRegistry, client?: LlmClient, getSession?: () => Session): void {
+export function registerAllTools(
+    registry: ToolRegistry,
+    client?: LlmClient,
+    getSession?: () => Session,
+    options?: { skillDiscovery?: SkillDiscovery; todoProvider?: TodoTreeProvider }
+): void {
     // File operations
     registry.register(createReadFileTool());
     registry.register(createWriteFileTool());
@@ -55,5 +65,22 @@ export function registerAllTools(registry: ToolRegistry, client?: LlmClient, get
     // Subagent (needs LlmClient + toolRegistry for tool access)
     if (client) {
         registry.register(createSubagentTool(client, registry));
+    }
+
+    // Database tools
+    for (const tool of createDbTools()) {
+        registry.register(tool);
+    }
+
+    // Skill tools
+    if (options?.skillDiscovery) {
+        for (const tool of createSkillTools(options.skillDiscovery)) {
+            registry.register(tool);
+        }
+    }
+
+    // Todo tool
+    if (options?.todoProvider) {
+        registry.register(createTodoTool(options.todoProvider));
     }
 }

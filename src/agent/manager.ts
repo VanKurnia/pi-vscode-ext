@@ -9,6 +9,8 @@ import { getConfig } from '../utils/config';
 import { Logger } from '../utils/logger';
 import { registerAllTools } from '../tools';
 import type { AgentEventMap, AgentEvent, AgentEventData } from '../utils/typedEvents';
+import type { SkillDiscovery } from './skills';
+import type { TodoTreeProvider } from '../ui/todoProvider';
 
 export type { AgentEvent, AgentEventData, AgentEventMap };
 
@@ -95,13 +97,13 @@ export class PiAgentManager extends EventEmitter implements Disposable {
     /** Steering message queue (pi-compatible: user can type while agent works) */
     private pendingMessages: string[] = [];
 
-    constructor() {
+    constructor(options?: { skillDiscovery?: SkillDiscovery; todoProvider?: TodoTreeProvider }) {
         super();
         this.client = new LlmClient();
         this.toolRegistry = new ToolRegistry();
         const config = getConfig();
         this.session = new Session(buildSystemPrompt(this.toolRegistry));
-        registerAllTools(this.toolRegistry, this.client, () => this.session);
+        registerAllTools(this.toolRegistry, this.client, () => this.session, options);
         this.refreshAgents();
 
         // Enable JSONL persistence (pi-compatible)

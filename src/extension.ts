@@ -5,6 +5,8 @@ import { StatusBarManager } from './ui/statusBar';
 import { InlineCompletionProvider } from './ui/inlineCompletion';
 import { AgentsTreeProvider } from './ui/agentsTreeProvider';
 import { ChangesTreeProvider } from './ui/changesTreeProvider';
+import { TodoTreeProvider } from './ui/todoProvider';
+import { SkillDiscovery } from './agent/skills';
 import { Logger } from './utils/logger';
 import { getConfig, onConfigChange } from './utils/config';
 import { resetBashGuard } from './tools/bashGuard';
@@ -17,12 +19,25 @@ let statusBar: StatusBarManager;
 let logger: Logger;
 let inlineCompletionProvider: InlineCompletionProvider;
 let inlineCompletionDisposable: vscode.Disposable | undefined;
+let todoProvider: TodoTreeProvider;
+let skillDiscovery: SkillDiscovery;
 
 export function activate(context: vscode.ExtensionContext): void {
     logger = Logger.getInstance();
     logger.info('Pi Agent activating...');
 
-    manager = new PiAgentManager();
+    // ── Skill discovery ────────────────────────────────────────
+    skillDiscovery = new SkillDiscovery();
+    const skillDirs = SkillDiscovery.getDefaultDirectories();
+    skillDiscovery.discoverSkills(skillDirs).catch(err => {
+        logger.warn('Skill discovery failed: ' + err.message);
+    });
+
+    // ── Todo provider ──────────────────────────────────────────
+    todoProvider = new TodoTreeProvider();
+
+    // ── Manager (with skill + todo deps) ───────────────────────
+    manager = new PiAgentManager({ skillDiscovery, todoProvider });
 
     // ── Tree views (sidebar) ──────────────────────────────────
     const agentsProvider = new AgentsTreeProvider(manager);
@@ -30,8 +45,11 @@ export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('pi-agent.agentsView', agentsProvider),
         vscode.window.registerTreeDataProvider('pi-agent.changesView', changesProvider),
+        vscode.window.registerTreeDataProvider('pi-agent.todoView', todoProvider),
         agentsProvider,
-        changesProvider
+        changesProvider,
+        todoProvider,
+        skillDiscovery
     );
 
     // ── Status bar ────────────────────────────────────────────
@@ -112,6 +130,10 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.commands.registerCommand('pi-agent.showContext', async () => {
             const ctx = await buildContextString();
             vscode.window.showInformationMessage('π Context: ' + ctx.slice(0, 200));
+        }),
+        vscode.commands.registerCommand('pi-agent.clearTodo', () => {
+            todoProvider.clearAll();
+            vscode.window.showInformationMessage('π Todo list cleared');
         })
     );
 
@@ -147,6 +169,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     logger.info('Pi Agent activated — model: ' + getConfig().api.model);
     logger.info('Tools: ' + manager.getToolRegistry().getAll().map(t => t.name).join(', '));
+    logger.info('Skills: ' + skillDiscovery.getAllSkills().length + ' discovered');
 }
 
 function updateInlineCompletions(): void {

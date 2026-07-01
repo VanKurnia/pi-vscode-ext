@@ -58,7 +58,8 @@
       { "command": "pi-agent.newSession", "title": "Pi Agent: New Session", "icon": "$(add)" },
       { "command": "pi-agent.planMode", "title": "Pi Agent: Toggle Plan Mode", "icon": "$(list-ordered)" },
       { "command": "pi-agent.toggleInlineSuggestions", "title": "Pi Agent: Toggle Inline Suggestions", "icon": "$(lightbulb)" },
-      { "command": "pi-agent.showContext", "title": "Pi Agent: Show Context Usage", "icon": "$(dashboard)" }
+      { "command": "pi-agent.showContext", "title": "Pi Agent: Show Context Usage", "icon": "$(dashboard)" },
+      { "command": "pi-agent.clearTodo", "title": "Pi Agent: Clear Todo List", "icon": "$(clear-all)" }
     ],
     "menus": {
       "editor/context": [
@@ -92,6 +93,13 @@
           "name": "Changes",
           "icon": "$(diff)",
           "contextualTitle": "File Changes"
+        },
+        {
+          "type": "tree",
+          "id": "pi-agent.todoView",
+          "name": "Tasks",
+          "icon": "$(checklist)",
+          "contextualTitle": "Agent Tasks"
         }
       ]
     },
