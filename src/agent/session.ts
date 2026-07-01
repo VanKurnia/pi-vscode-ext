@@ -207,8 +207,8 @@ export class Session {
      * Replace compacted messages with LLM-generated summary (pi-compatible).
      * Keeps the system prompt and most recent messages.
      */
-    applyCompaction(summary: string, keepRecentCount: number = 10): void {
-        if (this.messages.length <= keepRecentCount + 1) return;
+    applyCompaction(summary: string, keepRecentCount: number = 10): number {
+        if (this.messages.length <= keepRecentCount + 1) return 0;
 
         const systemMsg = this.messages[0];
         const recentMessages = this.messages.slice(-keepRecentCount);
@@ -230,6 +230,7 @@ export class Session {
             fsp.appendFile(this.persistPath, JSON.stringify(entry) + '\n', 'utf-8').catch(() => { /* ignore */ });
         }
         this.saveToDisk();
+        return droppedCount;
     }
 
     /**

@@ -462,9 +462,9 @@ export class PiAgentManager extends EventEmitter implements Disposable {
 
             const summary = summaryResponse.choices?.[0]?.message?.content;
             if (summary) {
-                this.session.applyCompaction(summary, 10);
-                this.emitEvent('compaction', { summary, droppedCount: 10 });
-                this.logger.info('Compaction complete: summary injected');
+                const droppedCount = this.session.applyCompaction(summary, 10);
+                this.emitEvent('compaction', { summary, droppedCount });
+                this.logger.info('Compaction complete: dropped ' + droppedCount + ' messages');
             } else {
                 this.session.truncateToTokenLimit(config.agent.maxTokens * 2);
                 this.logger.warn('LLM compaction returned no summary, used truncation fallback');
