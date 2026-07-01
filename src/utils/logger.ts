@@ -43,6 +43,10 @@ export class Logger {
         this.outputChannel.show();
     }
 
+    getChannel(): vscode.OutputChannel {
+        return this.outputChannel;
+    }
+
     dispose(): void {
         this.outputChannel.dispose();
     }

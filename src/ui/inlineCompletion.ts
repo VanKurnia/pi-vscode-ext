@@ -6,6 +6,9 @@ import { Logger } from '../utils/logger';
 export class InlineCompletionProvider implements vscode.InlineCompletionItemProvider {
     private client: LlmClient;
     private logger = Logger.getInstance();
+    private debounceTimer: ReturnType<typeof setTimeout> | undefined;
+    private lastRequestTime = 0;
+    private pendingCancellation: vscode.CancellationTokenSource | undefined;
 
     constructor(client: LlmClient) {
         this.client = client;
@@ -23,6 +26,21 @@ export class InlineCompletionProvider implements vscode.InlineCompletionItemProv
         const linePrefix = document.getText(new vscode.Range(new vscode.Position(position.line, 0), position));
         if (linePrefix.trim().length < 3) { return undefined; }
 
+        // Debounce: wait for user to stop typing
+        const debounceMs = config.inlineSuggestions.debounceMs;
+        const now = Date.now();
+        const timeSinceLast = now - this.lastRequestTime;
+        if (timeSinceLast < debounceMs) {
+            return undefined;
+        }
+        this.lastRequestTime = now;
+
+        // Cancel previous in-flight request
+        if (this.pendingCancellation) {
+            this.pendingCancellation.dispose();
+        }
+        this.pendingCancellation = new vscode.CancellationTokenSource();
+
         const startLine = Math.max(0, position.line - 30);
         const endLine = Math.min(document.lineCount - 1, position.line + 5);
         const contextRange = new vscode.Range(startLine, 0, endLine, document.lineAt(endLine).text.length);
@@ -36,7 +54,7 @@ export class InlineCompletionProvider implements vscode.InlineCompletionItemProv
             ];
 
             const response = await this.client.chatCompletion(messages, { model, maxTokens: 150, temperature: 0.3 });
-            if (token.isCancellationRequested) { return undefined; }
+            if (token.isCancellationRequested || this.pendingCancellation?.token.isCancellationRequested) { return undefined; }
 
             let completion = response.choices[0]?.message?.content || '';
             completion = completion.replace(/^```\w*\n?/gm, '').replace(/\n?```$/gm, '').trimStart();

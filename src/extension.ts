@@ -7,6 +7,7 @@ import { AgentsTreeProvider } from './ui/agentsTreeProvider';
 import { ChangesTreeProvider } from './ui/changesTreeProvider';
 import { Logger } from './utils/logger';
 import { getConfig, onConfigChange } from './utils/config';
+import { resetBashGuard } from './tools/bashGuard';
 import { buildContextString } from './utils/context';
 
 let manager: PiAgentManager;
@@ -143,8 +144,8 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(chatParticipant);
     logger.info('Chat participant registered');
 
-    // Output channel for standalone command results
-    const commandOutput = vscode.window.createOutputChannel('Pi Agent');
+    // Output channel for standalone command results (reuse Logger's channel)
+    const commandOutput = logger.getChannel();
     context.subscriptions.push(commandOutput);
 
     // Helper: run a prompt and show output in a notification
@@ -257,6 +258,7 @@ export function activate(context: vscode.ExtensionContext) {
         onConfigChange(() => {
             statusBar.refreshModel();
             updateInlineCompletions();
+            resetBashGuard();
         })
     );
 
@@ -278,6 +280,8 @@ export function activate(context: vscode.ExtensionContext) {
             }
         })
     );
+
+    context.subscriptions.push({ dispose: () => manager.dispose() });
 
     logger.info('Pi Agent activated — model: ' + getConfig().api.model);
     logger.info('Tools: ' + manager.getToolRegistry().getAll().map(t => t.name).join(', '));

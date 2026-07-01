@@ -16,7 +16,7 @@ export interface AgentEventData {
     data: any;
 }
 
-export class PiAgentManager extends EventEmitter {
+export class PiAgentManager extends EventEmitter implements Disposable {
     private client: LlmClient;
     private session: Session;
     private toolRegistry: ToolRegistry;
@@ -31,7 +31,7 @@ export class PiAgentManager extends EventEmitter {
         this.client = new LlmClient();
         this.toolRegistry = new ToolRegistry();
         const config = getConfig();
-        this.session = new Session(buildSystemPrompt(), config.agent.maxTokens, config.api.model, config.api.baseUrl);
+        this.session = new Session(buildSystemPrompt());
         registerAllTools(this.toolRegistry, this.client);
         this.refreshAgents();
         this.logger.info('PiAgentManager initialized');
@@ -88,7 +88,7 @@ export class PiAgentManager extends EventEmitter {
         if (!agent) { this.emitEvent('error', { message: 'Agent not found: ' + agentName }); return; }
         const config = getConfig();
         const model = resolveModel(agent.model) || config.api.model;
-        const agentSession = new Session(agent.systemPrompt || buildSystemPrompt(), config.agent.maxTokens, model);
+        const agentSession = new Session(agent.systemPrompt || buildSystemPrompt());
         agentSession.addUserMessage(task);
         this.isProcessing = true;
         this.emitEvent('status', { status: 'thinking', agent: agentName });
@@ -115,6 +115,11 @@ export class PiAgentManager extends EventEmitter {
         const MAX_ITER = 15;
 
         for (let i = 0; i < MAX_ITER; i++) {
+            // Truncate if approaching context limit
+            const dropped = this.session.truncateToTokenLimit(config.agent.maxTokens * 3);
+            if (dropped > 0) {
+                this.logger.warn('Truncated ' + dropped + ' messages to stay within context limit');
+            }
             const messages = this.session.getMessagesForApi();
             this.emitEvent('status', { status: 'thinking' });
 
@@ -178,4 +183,14 @@ export class PiAgentManager extends EventEmitter {
     }
 
     getHistory() { return this.session.getHistory(); }
+
+    dispose(): void {
+        this.stop();
+        this.removeAllListeners();
+        this.logger.info('PiAgentManager disposed');
+    }
+
+    [Symbol.dispose](): void {
+        this.dispose();
+    }
 }

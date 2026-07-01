@@ -11,6 +11,7 @@ export class ChangesTreeProvider implements vscode.TreeDataProvider<ChangeTreeIt
     private _onDidChangeTreeData = new vscode.EventEmitter<ChangeTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
     private changes: Map<string, TrackedChange> = new Map();
+    private refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
     refresh(): void { this._onDidChangeTreeData.fire(); }
 
@@ -18,10 +19,12 @@ export class ChangesTreeProvider implements vscode.TreeDataProvider<ChangeTreeIt
         const existing = this.changes.get(filePath);
         if (existing) { existing.added += added; existing.removed += removed; existing.timestamp = Date.now(); }
         else { this.changes.set(filePath, { filePath, added, removed, timestamp: Date.now() }); }
-        this.refresh();
+        // Debounce refreshes to avoid excessive tree view redraws on every keystroke
+        if (this.refreshTimer) { clearTimeout(this.refreshTimer); }
+        this.refreshTimer = setTimeout(() => { this.refresh(); }, 500);
     }
 
-    clear(): void { this.changes.clear(); this.refresh(); }
+    clear(): void { this.changes.clear(); if (this.refreshTimer) { clearTimeout(this.refreshTimer); } this.refresh(); }
 
     getTrackedChanges(): TrackedChange[] {
         return Array.from(this.changes.values()).sort((a, b) => b.timestamp - a.timestamp);

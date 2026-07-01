@@ -1,12 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { Tool } from '../agent/tools';
-
-function getWorkspaceRoot(): string {
-    const folders = vscode.workspace.workspaceFolders;
-    if (!folders || folders.length === 0) { throw new Error('No workspace folder open'); }
-    return folders[0].uri.fsPath;
-}
+import { resolveSafePath, getWorkspaceRoot } from '../utils/pathGuard';
 
 export function createGrepTool(): Tool {
     return {
@@ -67,7 +62,12 @@ export function createFindTool(): Tool {
         async execute(args: any) {
             try {
                 const workspaceRoot = getWorkspaceRoot();
-                const searchPath = args.path ? (path.isAbsolute(args.path) ? args.path : path.join(workspaceRoot, args.path)) : workspaceRoot;
+                let searchPath = workspaceRoot;
+                if (args.path) {
+                    const safe = resolveSafePath(args.path);
+                    if (safe.error) return { content: safe.error, isError: true };
+                    searchPath = safe.resolved;
+                }
                 const files = await vscode.workspace.findFiles(new vscode.RelativePattern(searchPath, args.pattern), '**/node_modules/**', args.max_results || 50);
                 if (files.length === 0) return { content: `No files found matching: ${args.pattern}` };
                 const relPaths = files.map(f => path.relative(workspaceRoot, f.fsPath)).sort();

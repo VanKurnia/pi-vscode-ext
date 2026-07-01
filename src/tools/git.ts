@@ -1,12 +1,7 @@
+import * as vscode from 'vscode';
 import { spawn } from 'child_process';
 import { Tool } from '../agent/tools';
-
-function getWorkspaceRoot(): string {
-    const vscode = require('vscode');
-    const folders = vscode.workspace.workspaceFolders;
-    if (!folders || folders.length === 0) { throw new Error('No workspace folder open'); }
-    return folders[0].uri.fsPath;
-}
+import { getWorkspaceRoot } from '../utils/pathGuard';
 
 function runGit(args: string[], cwd?: string): Promise<string> {
     return new Promise((resolve, reject) => {

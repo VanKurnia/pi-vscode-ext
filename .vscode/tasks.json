@@ -6,14 +6,13 @@
             "script": "compile",
             "group": "build",
             "label": "npm: compile",
-            "problemMatcher": []
+            "problemMatcher": ["$tsc"]
         },
         {
             "type": "npm",
-            "script": "watch",
+            "script": "webpack",
             "group": "build",
-            "label": "npm: watch",
-            "isBackground": true,
+            "label": "npm: webpack",
             "problemMatcher": []
         }
     ]

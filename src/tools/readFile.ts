@@ -1,12 +1,6 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { Tool } from '../agent/tools';
-
-function getWorkspaceRoot(): string {
-    const folders = vscode.workspace.workspaceFolders;
-    if (!folders || folders.length === 0) { throw new Error('No workspace folder open'); }
-    return folders[0].uri.fsPath;
-}
+import { resolveSafePath } from '../utils/pathGuard';
 
 export function createReadFileTool(): Tool {
     return {
@@ -23,8 +17,9 @@ export function createReadFileTool(): Tool {
         },
         async execute(args: any) {
             try {
-                const workspaceRoot = getWorkspaceRoot();
-                const filePath = path.isAbsolute(args.path) ? args.path : path.join(workspaceRoot, args.path);
+                const safe = resolveSafePath(args.path);
+                if (safe.error) return { content: safe.error, isError: true };
+                const filePath = safe.resolved;
                 const offset = Math.max(1, args.offset ?? 1);
                 const limit = Math.min(2000, Math.max(1, args.limit ?? 500));
 

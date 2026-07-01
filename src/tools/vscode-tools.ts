@@ -1,14 +1,8 @@
-import { Tool } from '../agent/tools';
-import { spawn } from 'child_process';
+import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-
-function getWorkspaceRoot(): string {
-    const vscode = require('vscode');
-    const folders = vscode.workspace.workspaceFolders;
-    if (!folders || folders.length === 0) { throw new Error('No workspace folder open'); }
-    return folders[0].uri.fsPath;
-}
+import { Tool } from '../agent/tools';
+import { resolveSafePath, getWorkspaceRoot } from '../utils/pathGuard';
 
 export function createLsTool(): Tool {
     return {
@@ -59,7 +53,6 @@ export function createContextTool(): Tool {
         description: 'Show current workspace context: open files, git branch, diagnostics',
         parameters: { type: 'object' as const, properties: {}, required: [] },
         async execute() {
-            const vscode = require('vscode');
             const parts: string[] = [];
 
             // Workspace
@@ -108,7 +101,6 @@ export function createDiagnosticsTool(): Tool {
             required: [],
         },
         async execute(args: any) {
-            const vscode = require('vscode');
             const parts: string[] = [];
 
             for (const [uri, diags] of vscode.languages.getDiagnostics()) {
@@ -133,7 +125,6 @@ export function createGetOpenEditorsTool(): Tool {
         description: 'List all currently open editor tabs/files',
         parameters: { type: 'object' as const, properties: {}, required: [] },
         async execute() {
-            const vscode = require('vscode');
             const parts: string[] = [];
 
             // Active editor
@@ -169,7 +160,9 @@ export function createReplaceInFileTool(): Tool {
         },
         async execute(args: any) {
             try {
-                const filePath = args.file_path.startsWith('/') ? args.file_path : path.join(getWorkspaceRoot(), args.file_path);
+                const safe = resolveSafePath(args.file_path);
+                if (safe.error) return { content: safe.error, isError: true };
+                const filePath = safe.resolved;
                 const content = fs.readFileSync(filePath, 'utf-8');
                 if (!content.includes(args.old_string)) {
                     return { content: 'Text not found in file', isError: true };

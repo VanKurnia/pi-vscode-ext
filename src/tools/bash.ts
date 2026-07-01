@@ -3,12 +3,7 @@ import { spawn } from 'child_process';
 import { Tool } from '../agent/tools';
 import { getBashGuard } from './bashGuard';
 import { getConfig } from '../utils/config';
-
-function getWorkspaceRoot(): string {
-    const folders = vscode.workspace.workspaceFolders;
-    if (!folders || folders.length === 0) { throw new Error('No workspace folder open'); }
-    return folders[0].uri.fsPath;
-}
+import { getWorkspaceRoot } from '../utils/pathGuard';
 
 export function createBashTool(): Tool {
     return {
