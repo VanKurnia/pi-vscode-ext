@@ -1,308 +1,310 @@
 {
-  "name": "pi-vscode-ext",
-  "displayName": "Pi Agent",
-  "description": "AI coding agent for VS Code — powered by Pi. GitHub Copilot-like experience with subagent orchestration, git tools, plan mode, and more.",
-  "version": "0.2.0",
-  "publisher": "pi-agent",
-  "engines": {
-    "vscode": "^1.90.0"
-  },
-  "categories": [
-    "AI",
-    "Machine Learning",
-    "Programming Languages",
-    "Other"
-  ],
-  "keywords": [
-    "ai",
-    "agent",
-    "copilot",
-    "code",
-    "completion",
-    "chat",
-    "pi"
-  ],
-  "enabledApiProposals": [],
-  "activationEvents": [
-    "onStartupFinished"
-  ],
-  "main": "./dist/extension.js",
-  "icon": "images/icon.svg",
-  "contributes": {
-    "chatParticipants": [
-      {
-        "id": "pi-agent.chat",
-        "name": "pi",
-        "fullName": "Pi Agent",
-        "description": "AI coding agent — ask questions, generate code, run commands, manage git, and more.",
-        "isSticky": true,
+    "name": "pi-vscode-ext",
+    "displayName": "Pi Agent",
+    "description": "AI coding agent for VS Code — powered by Pi. GitHub Copilot-like experience with subagent orchestration, git tools, plan mode, and more.",
+    "version": "0.2.0",
+    "publisher": "pi-agent",
+    "engines": {
+        "vscode": "^1.90.0"
+    },
+    "categories": [
+        "AI",
+        "Machine Learning",
+        "Programming Languages",
+        "Other"
+    ],
+    "keywords": [
+        "ai",
+        "agent",
+        "copilot",
+        "code",
+        "completion",
+        "chat",
+        "pi"
+    ],
+    "enabledApiProposals": [],
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./dist/extension.js",
+    "icon": "images/icon.svg",
+    "contributes": {
+        "chatParticipants": [
+            {
+                "id": "pi-agent.chat",
+                "name": "pi",
+                "fullName": "Pi Agent",
+                "description": "AI coding agent — ask questions, generate code, run commands, manage git, and more.",
+                "isSticky": true,
+                "commands": [
+                    {
+                        "name": "explain",
+                        "description": "Explain the selected code or file"
+                    },
+                    {
+                        "name": "fix",
+                        "description": "Fix errors in the selected code"
+                    },
+                    {
+                        "name": "refactor",
+                        "description": "Refactor the selected code"
+                    },
+                    {
+                        "name": "test",
+                        "description": "Generate tests for the selected code"
+                    },
+                    {
+                        "name": "review",
+                        "description": "Review code for issues and improvements"
+                    },
+                    {
+                        "name": "commit",
+                        "description": "Generate a commit message for staged changes"
+                    },
+                    {
+                        "name": "plan",
+                        "description": "Enter plan mode — create a step-by-step plan"
+                    },
+                    {
+                        "name": "scout",
+                        "description": "Fast codebase recon — find patterns and map architecture"
+                    },
+                    {
+                        "name": "research",
+                        "description": "Research a topic"
+                    },
+                    {
+                        "name": "clear",
+                        "description": "Clear chat history"
+                    }
+                ]
+            }
+        ],
         "commands": [
-          {
-            "name": "explain",
-            "description": "Explain the selected code or file"
-          },
-          {
-            "name": "fix",
-            "description": "Fix errors in the selected code"
-          },
-          {
-            "name": "refactor",
-            "description": "Refactor the selected code"
-          },
-          {
-            "name": "test",
-            "description": "Generate tests for the selected code"
-          },
-          {
-            "name": "review",
-            "description": "Review code for issues and improvements"
-          },
-          {
-            "name": "commit",
-            "description": "Generate a commit message for staged changes"
-          },
-          {
-            "name": "plan",
-            "description": "Enter plan mode — create a step-by-step plan"
-          },
-          {
-            "name": "scout",
-            "description": "Fast codebase recon — find patterns and map architecture"
-          },
-          {
-            "name": "research",
-            "description": "Research a topic"
-          },
-          {
-            "name": "clear",
-            "description": "Clear chat history"
-          }
-        ]
-      }
-    ],
-    "commands": [
-      {
-        "command": "pi-agent.explainCode",
-        "title": "Pi Agent: Explain Code",
-        "icon": "$(info)"
-      },
-      {
-        "command": "pi-agent.fixCode",
-        "title": "Pi Agent: Fix Code",
-        "icon": "$(wrench)"
-      },
-      {
-        "command": "pi-agent.refactorCode",
-        "title": "Pi Agent: Refactor Code",
-        "icon": "$(tools)"
-      },
-      {
-        "command": "pi-agent.generateTests",
-        "title": "Pi Agent: Generate Tests",
-        "icon": "$(beaker)"
-      },
-      {
-        "command": "pi-agent.reviewCode",
-        "title": "Pi Agent: Review Code",
-        "icon": "$(eye)"
-      },
-      {
-        "command": "pi-agent.generateCommitMessage",
-        "title": "Pi Agent: Generate Commit Message",
-        "icon": "$(git-commit)"
-      },
-      {
-        "command": "pi-agent.newSession",
-        "title": "Pi Agent: New Session",
-        "icon": "$(add)"
-      },
-      {
-        "command": "pi-agent.planMode",
-        "title": "Pi Agent: Toggle Plan Mode",
-        "icon": "$(list-ordered)"
-      },
-      {
-        "command": "pi-agent.toggleInlineSuggestions",
-        "title": "Pi Agent: Toggle Inline Suggestions",
-        "icon": "$(lightbulb)"
-      },
-      {
-        "command": "pi-agent.showContext",
-        "title": "Pi Agent: Show Context Usage",
-        "icon": "$(dashboard)"
-      },
-      {
-        "command": "pi-agent.clearTodo",
-        "title": "Pi Agent: Clear Todo List",
-        "icon": "$(clear-all)"
-      }
-    ],
-    "menus": {
-      "editor/context": [
-        {
-          "command": "pi-agent.explainCode",
-          "when": "editorHasSelection",
-          "group": "pi-agent@1"
+            {
+                "command": "pi-agent.explainCode",
+                "title": "Pi Agent: Explain Code",
+                "icon": "$(info)"
+            },
+            {
+                "command": "pi-agent.fixCode",
+                "title": "Pi Agent: Fix Code",
+                "icon": "$(wrench)"
+            },
+            {
+                "command": "pi-agent.refactorCode",
+                "title": "Pi Agent: Refactor Code",
+                "icon": "$(tools)"
+            },
+            {
+                "command": "pi-agent.generateTests",
+                "title": "Pi Agent: Generate Tests",
+                "icon": "$(beaker)"
+            },
+            {
+                "command": "pi-agent.reviewCode",
+                "title": "Pi Agent: Review Code",
+                "icon": "$(eye)"
+            },
+            {
+                "command": "pi-agent.generateCommitMessage",
+                "title": "Pi Agent: Generate Commit Message",
+                "icon": "$(git-commit)"
+            },
+            {
+                "command": "pi-agent.newSession",
+                "title": "Pi Agent: New Session",
+                "icon": "$(add)"
+            },
+            {
+                "command": "pi-agent.planMode",
+                "title": "Pi Agent: Toggle Plan Mode",
+                "icon": "$(list-ordered)"
+            },
+            {
+                "command": "pi-agent.toggleInlineSuggestions",
+                "title": "Pi Agent: Toggle Inline Suggestions",
+                "icon": "$(lightbulb)"
+            },
+            {
+                "command": "pi-agent.showContext",
+                "title": "Pi Agent: Show Context Usage",
+                "icon": "$(dashboard)"
+            },
+            {
+                "command": "pi-agent.clearTodo",
+                "title": "Pi Agent: Clear Todo List",
+                "icon": "$(clear-all)"
+            }
+        ],
+        "menus": {
+            "editor/context": [
+                {
+                    "command": "pi-agent.explainCode",
+                    "when": "editorHasSelection",
+                    "group": "pi-agent@1"
+                },
+                {
+                    "command": "pi-agent.fixCode",
+                    "when": "editorHasSelection",
+                    "group": "pi-agent@2"
+                },
+                {
+                    "command": "pi-agent.refactorCode",
+                    "when": "editorHasSelection",
+                    "group": "pi-agent@3"
+                },
+                {
+                    "command": "pi-agent.generateTests",
+                    "when": "editorHasSelection",
+                    "group": "pi-agent@4"
+                },
+                {
+                    "command": "pi-agent.reviewCode",
+                    "when": "editorHasSelection",
+                    "group": "pi-agent@5"
+                }
+            ],
+            "commandPalette": [
+                {
+                    "command": "pi-agent.explainCode",
+                    "when": "editorHasSelection"
+                }
+            ]
         },
-        {
-          "command": "pi-agent.fixCode",
-          "when": "editorHasSelection",
-          "group": "pi-agent@2"
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "pi-agent",
+                    "title": "Pi Agent",
+                    "icon": "images/icon.svg"
+                }
+            ]
         },
-        {
-          "command": "pi-agent.refactorCode",
-          "when": "editorHasSelection",
-          "group": "pi-agent@3"
+        "views": {
+            "pi-agent": [
+                {
+                    "type": "tree",
+                    "id": "pi-agent.agentsView",
+                    "name": "Agents",
+                    "icon": "$(hubot)",
+                    "contextualTitle": "Pi Agents"
+                },
+                {
+                    "type": "tree",
+                    "id": "pi-agent.changesView",
+                    "name": "Changes",
+                    "icon": "$(diff)",
+                    "contextualTitle": "File Changes"
+                },
+                {
+                    "type": "tree",
+                    "id": "pi-agent.todoView",
+                    "name": "Tasks",
+                    "icon": "$(checklist)",
+                    "contextualTitle": "Agent Tasks"
+                }
+            ]
         },
-        {
-          "command": "pi-agent.generateTests",
-          "when": "editorHasSelection",
-          "group": "pi-agent@4"
-        },
-        {
-          "command": "pi-agent.reviewCode",
-          "when": "editorHasSelection",
-          "group": "pi-agent@5"
+        "configuration": {
+            "title": "Pi Agent",
+            "properties": {
+                "pi-agent.api.baseUrl": {
+                    "type": "string",
+                    "default": "http://localhost:8080/v1",
+                    "description": "Base URL for the OpenAI-compatible API endpoint"
+                },
+                "pi-agent.api.apiKey": {
+                    "type": "string",
+                    "default": "",
+                    "description": "API key for the LLM provider (leave empty for local providers)"
+                },
+                "pi-agent.api.model": {
+                    "type": "string",
+                    "default": "versatile",
+                    "description": "Default model to use for completions"
+                },
+                "pi-agent.api.chatModel": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Model for chat (falls back to api.model if empty)"
+                },
+                "pi-agent.api.completionModel": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Model for inline completions (falls back to api.model if empty)"
+                },
+                "pi-agent.agent.maxTokens": {
+                    "type": "number",
+                    "default": 16384,
+                    "description": "Maximum tokens for agent responses"
+                },
+                "pi-agent.agent.temperature": {
+                    "type": "number",
+                    "default": 0.7,
+                    "description": "Temperature for LLM requests"
+                },
+                "pi-agent.agent.systemPrompt": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Custom system prompt appended to the default"
+                },
+                "pi-agent.inlineSuggestions.enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable inline code suggestions (ghost text)"
+                },
+                "pi-agent.inlineSuggestions.debounceMs": {
+                    "type": "number",
+                    "default": 500,
+                    "description": "Debounce delay in milliseconds for inline suggestions"
+                },
+                "pi-agent.subagents.maxConcurrency": {
+                    "type": "number",
+                    "default": 4,
+                    "description": "Maximum concurrent subagent processes"
+                },
+                "pi-agent.tools.enableBashGuard": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable bash command safety guard"
+                },
+                "pi-agent.tools.enableGit": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable git toolkit tools"
+                }
+            }
         }
-      ],
-      "commandPalette": [
-        {
-          "command": "pi-agent.explainCode",
-          "when": "editorHasSelection"
-        }
-      ]
     },
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "pi-agent",
-          "title": "Pi Agent",
-          "icon": "images/icon.svg"
-        }
-      ]
+    "scripts": {
+        "vscode:prepublish": "npm run webpack",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "webpack": "cross-env NODE_OPTIONS=--max-old-space-size=4096 webpack --mode production",
+        "webpack:dev": "webpack --mode development --watch",
+        "lint": "eslint src --ext ts",
+        "package": "vsce package"
     },
-    "views": {
-      "pi-agent": [
-        {
-          "type": "tree",
-          "id": "pi-agent.agentsView",
-          "name": "Agents",
-          "icon": "$(hubot)",
-          "contextualTitle": "Pi Agents"
-        },
-        {
-          "type": "tree",
-          "id": "pi-agent.changesView",
-          "name": "Changes",
-          "icon": "$(diff)",
-          "contextualTitle": "File Changes"
-        },
-        {
-          "type": "tree",
-          "id": "pi-agent.todoView",
-          "name": "Tasks",
-          "icon": "$(checklist)",
-          "contextualTitle": "Agent Tasks"
-        }
-      ]
+    "devDependencies": {
+        "@opentelemetry/api": "^1.9.1",
+        "@types/diff": "^5.0.0",
+        "@types/node": "^20.0.0",
+        "@types/vscode": "^1.90.0",
+        "@typescript-eslint/eslint-plugin": "^7.0.0",
+        "@typescript-eslint/parser": "^7.0.0",
+        "@vscode/vsce": "^3.9.2",
+        "cross-env": "^10.1.0",
+        "eslint": "^8.56.0",
+        "ts-loader": "^9.6.2",
+        "typescript": "^5.3.0",
+        "webpack": "^5.90.0",
+        "webpack-cli": "^5.1.4"
     },
-    "configuration": {
-      "title": "Pi Agent",
-      "properties": {
-        "pi-agent.api.baseUrl": {
-          "type": "string",
-          "default": "http://localhost:8080/v1",
-          "description": "Base URL for the OpenAI-compatible API endpoint"
-        },
-        "pi-agent.api.apiKey": {
-          "type": "string",
-          "default": "",
-          "description": "API key for the LLM provider (leave empty for local providers)"
-        },
-        "pi-agent.api.model": {
-          "type": "string",
-          "default": "versatile",
-          "description": "Default model to use for completions"
-        },
-        "pi-agent.api.chatModel": {
-          "type": "string",
-          "default": "",
-          "description": "Model for chat (falls back to api.model if empty)"
-        },
-        "pi-agent.api.completionModel": {
-          "type": "string",
-          "default": "",
-          "description": "Model for inline completions (falls back to api.model if empty)"
-        },
-        "pi-agent.agent.maxTokens": {
-          "type": "number",
-          "default": 16384,
-          "description": "Maximum tokens for agent responses"
-        },
-        "pi-agent.agent.temperature": {
-          "type": "number",
-          "default": 0.7,
-          "description": "Temperature for LLM requests"
-        },
-        "pi-agent.agent.systemPrompt": {
-          "type": "string",
-          "default": "",
-          "description": "Custom system prompt appended to the default"
-        },
-        "pi-agent.inlineSuggestions.enabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable inline code suggestions (ghost text)"
-        },
-        "pi-agent.inlineSuggestions.debounceMs": {
-          "type": "number",
-          "default": 500,
-          "description": "Debounce delay in milliseconds for inline suggestions"
-        },
-        "pi-agent.subagents.maxConcurrency": {
-          "type": "number",
-          "default": 4,
-          "description": "Maximum concurrent subagent processes"
-        },
-        "pi-agent.tools.enableBashGuard": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable bash command safety guard"
-        },
-        "pi-agent.tools.enableGit": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable git toolkit tools"
-        }
-      }
+    "dependencies": {
+        "@earendil-works/pi-agent-core": "^0.74.2",
+        "@earendil-works/pi-ai": "^0.74.2",
+        "@sinclair/typebox": "^0.34.49",
+        "diff": "^5.2.0"
     }
-  },
-  "scripts": {
-    "vscode:prepublish": "npm run webpack",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "webpack": "webpack --mode production",
-    "webpack:dev": "webpack --mode development --watch",
-    "lint": "eslint src --ext ts",
-    "package": "vsce package"
-  },
-  "devDependencies": {
-    "@types/diff": "^5.0.0",
-    "@types/node": "^20.0.0",
-    "@types/vscode": "^1.90.0",
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0",
-    "@vscode/vsce": "^3.9.2",
-    "eslint": "^8.56.0",
-    "ts-loader": "^9.6.2",
-    "typescript": "^5.3.0",
-    "webpack": "^5.90.0",
-    "webpack-cli": "^5.1.4"
-  },
-  "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.74.2",
-    "@earendil-works/pi-ai": "^0.74.2",
-    "@sinclair/typebox": "^0.34.49",
-    "diff": "^5.2.0"
-  }
 }

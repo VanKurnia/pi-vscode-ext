@@ -22,19 +22,19 @@ module.exports = {
         ],
     },
     externals: {
+        // Only vscode is external — provided by VS Code runtime
         vscode: 'commonjs vscode',
-        // Mark all node_modules as external — VS Code resolves them at runtime
-        // This avoids bundling pi-agent-core, pi-ai, and all provider SDKs
-        '@earendil-works/pi-agent-core': 'commonjs @earendil-works/pi-agent-core',
-        '@earendil-works/pi-ai': 'commonjs @earendil-works/pi-ai',
-        // Provider SDKs that pi-agent-core transitively depends on
-        '@google/genai': 'commonjs @google/genai',
-        '@mistralai/mistralai': 'commonjs @mistralai/mistralai',
-        'openai': 'commonjs openai',
-        'anthropic': 'commonjs anthropic',
+        // Everything else (pi-agent-core, pi-ai, provider SDKs) gets bundled
     },
     devtool: 'nosources-source-map',
     stats: {
         errorDetails: true,
     },
+    ignoreWarnings: [
+        // ws optional native deps — not needed, ws falls back to JS
+        /Can't resolve 'bufferutil'/,
+        /Can't resolve 'utf-8-validate'/,
+        // Dynamic requires in provider SDKs — safe
+        /Critical dependency: the request of a dependency is an expression/,
+    ],
 };
