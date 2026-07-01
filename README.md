@@ -15,7 +15,7 @@ A powerful AI coding agent extension for VS Code, using the **native Chat API** 
 - Slash commands displayed as native Chat commands
 - Progress indicators during tool execution
 
-### 🛠️ 18 Built-in Tools
+### 🛠️ 22 Built-in Tools
 
 | Category | Tools |
 |----------|-------|
