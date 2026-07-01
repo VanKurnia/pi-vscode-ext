@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import type { AgentHarness } from '@earendil-works/pi-agent-core/node';
 import { streamFromHarness } from '../bridge/stream-bridge';
 import type { PlanModeManager } from './planMode';
+import type { SpeedTracker } from '../tools/speedMeter';
 
 const noopToken: vscode.CancellationToken = {
     isCancellationRequested: false,
@@ -25,7 +26,8 @@ export async function handleSlashCommand(
     prompt: string,
     stream: vscode.ChatResponseStream,
     harness: AgentHarness,
-    planMode?: PlanModeManager
+    planMode?: PlanModeManager,
+    speedTracker?: SpeedTracker
 ): Promise<vscode.ChatResult> {
     switch (command) {
         case 'explain': {
@@ -67,15 +69,39 @@ export async function handleSlashCommand(
                 stream.markdown('Usage: `/plan <task description>`');
                 return {};
             }
-            // Use PlanModeManager if available
             if (planMode) {
                 const planInstruction = planMode.startPlan();
                 const fullPrompt = `${planInstruction}\n\nUser request: ${prompt}`;
                 await streamFromHarness(harness, fullPrompt, stream, noopToken);
-                // Parse steps from the response if planning succeeded
                 stream.markdown('\n\n---\n*Plan mode active. Use `/plan` again with your next step to continue.*');
             } else {
                 await streamFromHarness(harness, `Create a detailed step-by-step plan for: ${prompt}`, stream, noopToken);
+            }
+            return {};
+        }
+        case 'compact': {
+            try {
+                stream.markdown('🔄 Running VCC compaction...\n');
+                const result = await harness.compact('__pi_vcc__');
+                const tokBefore = result.tokensBefore >= 1000
+                    ? `${(result.tokensBefore / 1000).toFixed(1)}k`
+                    : String(result.tokensBefore);
+                stream.markdown(`✅ **VCC compacted** — ${tokBefore} tokens → summary generated\n`);
+            } catch (err: any) {
+                if (err.message === 'Compaction cancelled' || err.message === 'Already compacted') {
+                    stream.markdown('⚠️ Nothing to compact.\n');
+                } else {
+                    stream.markdown(`❌ Compaction failed: ${err.message}\n`);
+                }
+            }
+            return {};
+        }
+        case 'speed': {
+            const report = speedTracker?.getLastReport();
+            if (report) {
+                stream.markdown(`⚡ **Last generation speed:** ${report.display}\n`);
+            } else {
+                stream.markdown('No speed data yet. Send a message first.\n');
             }
             return {};
         }
@@ -115,6 +141,8 @@ export function helpMarkdown(): string {
         '| `/review` | Review code for issues |',
         '| `/commit` | Generate commit message |',
         '| `/plan <task>` | Create a step-by-step plan |',
+        '| `/compact` | Run VCC compaction (structured summary) |',
+        '| `/speed` | Show last generation speed |',
         '| `/scout <query>` | Codebase reconnaissance |',
         '| `/research <topic>` | Research a topic |',
         '| `/clear` | Clear chat history |',

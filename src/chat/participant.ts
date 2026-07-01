@@ -1,7 +1,6 @@
 /**
  * Chat Participant — native VS Code Chat integration via @pi.
- *
- * Uses pi-agent-core's AgentHarness through the bridge layer.
+ * Wires VCC compaction and speed tracking.
  */
 
 import * as vscode from 'vscode';
@@ -9,6 +8,8 @@ import type { PiBridgeContext } from '../bridge/types';
 import { streamFromHarness } from '../bridge/stream-bridge';
 import { handleSlashCommand, helpMarkdown } from './commands';
 import { PlanModeManager } from './planMode';
+import { SpeedTracker } from '../tools/speedMeter';
+import { registerVccCompaction } from '../compaction';
 import { Logger } from '../utils/logger';
 
 const logger = Logger.getInstance();
@@ -18,6 +19,20 @@ export function registerChatParticipant(
     extensionUri: vscode.Uri
 ): vscode.ChatParticipant {
     const planMode = new PlanModeManager();
+    const speedTracker = new SpeedTracker();
+
+    // Wire VCC compaction hook into AgentHarness
+    registerVccCompaction(bridge.harness);
+    logger.info('[chat] VCC compaction hook registered');
+
+    // Wire speed tracking into harness events
+    bridge.harness.on('before_provider_request', () => {
+        speedTracker.start(); return undefined;
+    });
+    bridge.harness.on('after_provider_response', () => {
+        speedTracker.stop();
+        logger.info(`[speed] ${speedTracker.getLastReport()?.display || 'n/a'}`); return undefined;
+    });
 
     const chatParticipant = vscode.chat.createChatParticipant(
         'pi-agent.chat',
@@ -31,7 +46,7 @@ export function registerChatParticipant(
 
             // Slash commands
             if (request.command) {
-                return await handleSlashCommand(request.command, prompt, stream, bridge.harness, planMode);
+                return await handleSlashCommand(request.command, prompt, stream, bridge.harness, planMode, speedTracker);
             }
 
             // Empty message
@@ -41,7 +56,7 @@ export function registerChatParticipant(
                 return {};
             }
 
-            // If plan mode is active, inject plan context into the prompt
+            // If plan mode is active, inject plan context
             let fullPrompt = prompt;
             if (planMode.isActive()) {
                 const modifier = planMode.getSystemPromptModifier();
