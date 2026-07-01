@@ -24,7 +24,8 @@
     ],
     "enabledApiProposals": [],
     "activationEvents": [
-        "onStartupFinished"
+        "onStartupFinished",
+        "onView:pi-agent.chatPanel"
     ],
     "main": "./out/extension.js",
     "icon": "images/icon.svg",
@@ -301,5 +302,23 @@
         "@sinclair/typebox": "^0.34.49",
         "diff": "^5.2.0"
     },
-    "type": "module"
+    "type": "module",
+    "viewsContainers": {
+        "panel": [
+            {
+                "id": "pi-agent",
+                "title": "Pi Agent",
+                "icon": "images/icon.svg"
+            }
+        ]
+    },
+    "views": {
+        "pi-agent": [
+            {
+                "type": "webview",
+                "id": "pi-agent.chatPanel",
+                "name": "Chat"
+            }
+        ]
+    }
 }
