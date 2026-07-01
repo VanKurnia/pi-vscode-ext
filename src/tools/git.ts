@@ -122,6 +122,17 @@ const gitTools: Tool[] = [
             } catch (e: any) { return { content: e.message, isError: true }; }
         },
     },
+    {
+        name: 'git_reset',
+        description: 'Unstage all staged changes (soft reset)',
+        parameters: { type: 'object' as const, properties: { repo_path: { type: 'string', description: 'Path to repo' } }, required: [] },
+        async execute(args: any) {
+            try {
+                await runGit(['reset'], args?.repo_path);
+                return { content: 'Successfully unstaged all changes' };
+            } catch (e: any) { return { content: e.message, isError: true }; }
+        },
+    },
 ];
 
 export function createGitTools(): Tool[] {

@@ -6,9 +6,9 @@ import { StatusBarManager } from './ui/statusBar';
 import { InlineCompletionProvider } from './ui/inlineCompletion';
 import { AgentsTreeProvider } from './ui/agentsTreeProvider';
 import { ChangesTreeProvider } from './ui/changesTreeProvider';
-import { registerCommands } from './commands';
 import { Logger } from './utils/logger';
 import { getConfig, onConfigChange } from './utils/config';
+import { buildContextString } from './utils/context';
 
 let manager: PiAgentManager;
 let statusBar: StatusBarManager;
@@ -32,66 +32,40 @@ export function activate(context: vscode.ExtensionContext) {
     // Register tree views
     const agentsProvider = new AgentsTreeProvider(manager);
     const changesProvider = new ChangesTreeProvider();
-
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('pi-agent.agentsView', agentsProvider),
         vscode.window.registerTreeDataProvider('pi-agent.changesView', changesProvider)
     );
 
-    // Register commands
-    registerCommands(context, manager, logger);
-
     // Status bar
     statusBar = new StatusBarManager(manager);
-    context.subscriptions.push({
-        dispose: () => statusBar.dispose(),
-    });
+    context.subscriptions.push({ dispose: () => statusBar.dispose() });
 
     // Inline completion provider
     const client = new LlmClient();
     inlineCompletionProvider = new InlineCompletionProvider(client);
     updateInlineCompletions();
 
-    // Chat participant (VSCode 1.90+)
+    // Register VSCode Chat participant (Copilot Chat integration)
     try {
         if ('createChatParticipant' in vscode.chat) {
             const participant = (vscode.chat as any).createChatParticipant(
                 'pi.chat',
-                async (request: any, _context: any, stream: any, _token: any) => {
+                async (request: any, _ctx: any, stream: any, _token: any) => {
                     const prompt = request.prompt;
-
-                    // Handle slash commands
                     if (request.command) {
-                        switch (request.command) {
-                            case 'explain':
-                            case 'fix':
-                            case 'refactor':
-                            case 'test':
-                            case 'review':
-                            case 'commit':
-                            case 'plan':
-                                stream.markdown(`Running /${request.command}...\\n`);
-                                await manager.processUserMessage(`/${request.command} ${prompt}`);
-                                break;
-                            case 'scout':
-                                await manager.processAgentMessage('scout', prompt);
-                                break;
-                            case 'research':
-                                await manager.processAgentMessage('researcher', prompt);
-                                break;
-                            default:
-                                stream.markdown(`Unknown command: ${request.command}\\n`);
-                        }
+                        stream.markdown('**/' + request.command + '** — use the Pi Agent sidebar chat for slash commands.\n');
                         return;
                     }
-
-                    // Regular chat message
-                    const { buildContextString } = require('./utils/context');
-                    stream.markdown('⚡ *Thinking...*\\n');
-                    await manager.processUserMessage(prompt, buildContextString());
+                    try {
+                        const ctx = await buildContextString();
+                        await manager.processUserMessage(prompt, ctx);
+                        stream.markdown('Response sent to Pi Agent sidebar.\n');
+                    } catch (err: any) {
+                        stream.markdown('Error: ' + err.message + '\n');
+                    }
                 }
             );
-
             if (participant) {
                 participant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'images', 'icon.svg');
                 context.subscriptions.push(participant);
@@ -99,8 +73,78 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }
     } catch (err: any) {
-        logger.warn(`Could not register chat participant: ${err.message}`);
+        logger.warn('Could not register chat participant: ' + err.message);
     }
+
+    // Register commands
+    context.subscriptions.push(
+        vscode.commands.registerCommand('pi-agent.openChat', () => chatProvider.show()),
+        vscode.commands.registerCommand('pi-agent.explainCode', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) { vscode.window.showWarningMessage('No active editor'); return; }
+            const code = editor.document.getText(editor.selection) || editor.document.getText();
+            const lang = editor.document.languageId;
+            chatProvider.show();
+            await manager.processUserMessage('Explain this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', await buildContextString());
+        }),
+        vscode.commands.registerCommand('pi-agent.fixCode', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) { vscode.window.showWarningMessage('No active editor'); return; }
+            const code = editor.document.getText(editor.selection) || editor.document.getText();
+            const lang = editor.document.languageId;
+            chatProvider.show();
+            await manager.processUserMessage('Fix errors in this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', await buildContextString());
+        }),
+        vscode.commands.registerCommand('pi-agent.refactorCode', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) { vscode.window.showWarningMessage('No active editor'); return; }
+            const code = editor.document.getText(editor.selection);
+            if (!code) { vscode.window.showWarningMessage('Select code to refactor'); return; }
+            const lang = editor.document.languageId;
+            chatProvider.show();
+            await manager.processUserMessage('Refactor this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', await buildContextString());
+        }),
+        vscode.commands.registerCommand('pi-agent.generateTests', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) { vscode.window.showWarningMessage('No active editor'); return; }
+            const code = editor.document.getText(editor.selection) || editor.document.getText();
+            const lang = editor.document.languageId;
+            chatProvider.show();
+            await manager.processUserMessage('Generate comprehensive tests for this ' + lang + ' code:\n```' + lang + '\n' + code + '\n```', await buildContextString());
+        }),
+        vscode.commands.registerCommand('pi-agent.reviewCode', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) { vscode.window.showWarningMessage('No active editor'); return; }
+            const code = editor.document.getText(editor.selection) || editor.document.getText();
+            const lang = editor.document.languageId;
+            chatProvider.show();
+            await manager.processUserMessage('Review this ' + lang + ' code for issues and improvements:\n```' + lang + '\n' + code + '\n```', await buildContextString());
+        }),
+        vscode.commands.registerCommand('pi-agent.generateCommitMessage', async () => {
+            chatProvider.show();
+            await manager.processUserMessage('Generate a conventional commit message for the current staged changes. Use git_status and git_diff_staged tools.', await buildContextString());
+        }),
+        vscode.commands.registerCommand('pi-agent.newSession', () => {
+            manager.clearSession();
+        }),
+        vscode.commands.registerCommand('pi-agent.planMode', () => {
+            const enabled = manager.togglePlanMode();
+            vscode.window.showInformationMessage('Plan Mode: ' + (enabled ? 'ON' : 'OFF'));
+        }),
+        vscode.commands.registerCommand('pi-agent.toggleInlineSuggestions', () => {
+            const config = getConfig();
+            const newVal = !config.inlineSuggestions.enabled;
+            vscode.workspace.getConfiguration('pi-agent').update('inlineSuggestions.enabled', newVal, vscode.ConfigurationTarget.Global);
+            vscode.window.showInformationMessage('Inline Suggestions: ' + (newVal ? 'ON' : 'OFF'));
+        }),
+        vscode.commands.registerCommand('pi-agent.showContext', async () => {
+            const ctx = await buildContextString();
+            vscode.window.showInformationMessage('Context: ' + ctx.slice(0, 200));
+        }),
+        vscode.commands.registerCommand('pi-agent.showChanges', () => {
+            vscode.window.showInformationMessage('Changes tracked in sidebar → Changes view');
+        })
+    );
 
     // Config change listener
     context.subscriptions.push(
@@ -111,18 +155,15 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
-    // Track document changes for filechanges view
+    // Track document changes
     context.subscriptions.push(
         vscode.workspace.onDidChangeTextDocument(e => {
             const changes = e.contentChanges;
             if (changes.length > 0) {
-                let added = 0;
-                let removed = 0;
+                let added = 0, removed = 0;
                 for (const change of changes) {
                     const newLines = change.text.split('\n').length - 1;
-                    const removedLines = change.rangeLength > 0
-                        ? (e.document.getText(change.range).split('\n').length - 1)
-                        : 0;
+                    const removedLines = change.rangeLength > 0 ? (e.document.getText(change.range).split('\n').length - 1) : 0;
                     added += Math.max(0, newLines);
                     removed += Math.max(0, removedLines);
                 }
@@ -133,18 +174,17 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
-    logger.info('Pi Agent extension activated successfully');
-    logger.info(`Model: ${getConfig().api.model}, API: ${getConfig().api.baseUrl}`);
+    logger.info('Pi Agent extension activated');
+    logger.info('Model: ' + getConfig().api.model + ', API: ' + getConfig().api.baseUrl);
+    logger.info('Tools: ' + manager.getToolRegistry().getAll().map(t => t.name).join(', '));
 }
 
 function updateInlineCompletions(): void {
     const config = getConfig();
-
     if (inlineCompletionDisposable) {
         inlineCompletionDisposable.dispose();
         inlineCompletionDisposable = undefined;
     }
-
     if (config.inlineSuggestions.enabled) {
         inlineCompletionDisposable = vscode.languages.registerInlineCompletionItemProvider(
             { pattern: '**' },

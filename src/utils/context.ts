@@ -1,36 +1,79 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { spawn } from 'child_process';
 
-export function getActiveFileInfo() {
+export function getActiveFileInfo(): string | null {
     const editor = vscode.window.activeTextEditor;
     if (!editor) return null;
+
     const doc = editor.document;
-    const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
-    return {
-        filePath: doc.fileName, language: doc.languageId,
-        selection: doc.getText(editor.selection), lineCount: doc.lineCount,
-        currentLine: editor.selection.active.line + 1,
-        relativePath: ws ? path.relative(ws, doc.fileName) : doc.fileName,
-    };
+    const parts = [
+        'File: ' + doc.fileName,
+        'Language: ' + doc.languageId,
+    ];
+
+    if (!editor.selection.isEmpty) {
+        const selectedText = doc.getText(editor.selection);
+        const startLine = editor.selection.start.line + 1;
+        const endLine = editor.selection.end.line + 1;
+        parts.push('Selection: lines ' + startLine + '-' + endLine);
+        parts.push('Selected code:\n```' + doc.languageId + '\n' + selectedText + '\n```');
+    }
+
+    return parts.join('\n');
 }
 
-export function getWorkspaceRoot(): string {
-    const folders = vscode.workspace.workspaceFolders;
-    if (!folders || folders.length === 0) throw new Error('No workspace folder open');
-    return folders[0].uri.fsPath;
-}
-
-export function buildContextString(): string {
+export async function getWorkspaceInfo(): Promise<string> {
     const parts: string[] = [];
-    const fi = getActiveFileInfo();
-    if (fi) {
-        parts.push(`**Active file:** \`${fi.relativePath}\` (${fi.language}, line ${fi.currentLine}/${fi.lineCount})`);
-        if (fi.selection) {
-            const preview = fi.selection.length > 200 ? fi.selection.slice(0, 200) + '...' : fi.selection;
-            parts.push(`**Selection:**\n\`\`\`${fi.language}\n${preview}\n\`\`\``);
+
+    // Workspace folders
+    const folders = vscode.workspace.workspaceFolders;
+    if (folders) {
+        parts.push('Workspace: ' + folders.map(f => f.name).join(', '));
+    }
+
+    // Git branch (async with timeout)
+    const wsRoot = folders?.[0]?.uri.fsPath;
+    if (wsRoot) {
+        try {
+            const branch = await new Promise<string>((resolve) => {
+                const child = spawn('git', ['branch', '--show-current'], { cwd: wsRoot, timeout: 5000 });
+                let out = '';
+                child.stdout.on('data', (d: Buffer) => { out += d.toString(); });
+                child.on('close', () => resolve(out.trim()));
+                child.on('error', () => resolve(''));
+                setTimeout(() => { try { child.kill(); } catch {} resolve(''); }, 5000);
+            });
+            if (branch) { parts.push('Git branch: ' + branch); }
+        } catch { /* ignore */ }
+    }
+
+    // Open editors count
+    parts.push('Open editors: ' + vscode.window.visibleTextEditors.length);
+
+    // Diagnostics summary
+    let errors = 0, warnings = 0;
+    for (const [, diags] of vscode.languages.getDiagnostics()) {
+        for (const d of diags) {
+            if (d.severity === vscode.DiagnosticSeverity.Error) errors++;
+            if (d.severity === vscode.DiagnosticSeverity.Warning) warnings++;
         }
     }
-    const ws = vscode.workspace.workspaceFolders?.map(f => f.name) || [];
-    if (ws.length > 0) parts.push(`**Workspace:** ${ws.join(', ')}`);
-    return parts.join('\n\n');
+    if (errors || warnings) {
+        parts.push('Diagnostics: ' + errors + ' errors, ' + warnings + ' warnings');
+    }
+
+    return parts.join('\n');
+}
+
+export async function buildContextString(): Promise<string> {
+    const parts: string[] = [];
+
+    const fileInfo = getActiveFileInfo();
+    if (fileInfo) { parts.push(fileInfo); }
+
+    const wsInfo = await getWorkspaceInfo();
+    if (wsInfo) { parts.push(wsInfo); }
+
+    return parts.join('\n');
 }

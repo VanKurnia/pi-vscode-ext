@@ -9,7 +9,7 @@ import { getConfig } from '../utils/config';
 import { Logger } from '../utils/logger';
 import { registerAllTools } from '../tools';
 
-export type AgentEvent = 'userMessage' | 'assistantMessage' | 'toolCall' | 'toolResult' | 'streamStart' | 'streamChunk' | 'error' | 'clear' | 'status';
+export type AgentEvent = 'userMessage' | 'assistantMessage' | 'toolCall' | 'toolResult' | 'streamStart' | 'streamChunk' | 'streamEnd' | 'error' | 'clear' | 'status';
 
 export interface AgentEventData {
     type: AgentEvent;
@@ -24,6 +24,7 @@ export class PiAgentManager extends EventEmitter {
     private logger = Logger.getInstance();
     private abortController: AbortController | null = null;
     private isProcessing = false;
+    private planMode = false;
 
     constructor() {
         super();
@@ -40,37 +41,41 @@ export class PiAgentManager extends EventEmitter {
         try {
             const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
             this.agents = discoverAgents(ws);
-            this.logger.info(`Discovered ${this.agents.length} agents`);
-        } catch (err: any) { this.logger.warn(`Agent discovery failed: ${err.message}`); }
+            this.logger.info('Discovered ' + this.agents.length + ' agents');
+        } catch (err: any) { this.logger.warn('Agent discovery failed: ' + err.message); }
     }
 
     getAgents(): AgentConfig[] { return [...this.agents]; }
-
     getSessionContext() {
         const ctx = this.session.getContext();
         const config = getConfig();
         return { ...ctx, maxTokens: config.agent.maxTokens, model: config.api.model, provider: config.api.baseUrl };
     }
-
     getToolRegistry(): ToolRegistry { return this.toolRegistry; }
     isBusy(): boolean { return this.isProcessing; }
+    isPlanMode(): boolean { return this.planMode; }
+    togglePlanMode(): boolean { this.planMode = !this.planMode; return this.planMode; }
 
     emitEvent(type: AgentEvent, data: any): void { this.emit('event', { type, data } as AgentEventData); }
 
     async processUserMessage(content: string, context?: string): Promise<void> {
-        if (this.isProcessing) { this.emitEvent('error', { message: 'Already processing. Please wait.' }); return; }
+        if (this.isProcessing) { this.emitEvent('error', { message: 'Already processing a message. Please wait.' }); return; }
         this.isProcessing = true;
         this.abortController = new AbortController();
         this.emitEvent('status', { status: 'thinking' });
 
         try {
-            const fullContent = context ? `${content}\n\n---\nContext:\n${context}` : content;
+            const fullContent = context ? content + '\n\n---\nWorkspace Context:\n' + context : content;
             this.session.addUserMessage(fullContent);
             this.emitEvent('userMessage', { content });
             await this.agentLoop();
         } catch (err: any) {
-            if (err.name === 'AbortError') this.emitEvent('assistantMessage', { content: '*[Stopped]*' });
-            else { this.logger.error(`Error: ${err.message}`, err); this.emitEvent('error', { message: err.message }); }
+            if (err.name === 'AbortError' || err.message === 'Aborted') {
+                this.emitEvent('assistantMessage', { content: '*[Stopped by user]*' });
+            } else {
+                this.logger.error('Error: ' + err.message, err);
+                this.emitEvent('error', { message: err.message });
+            }
         } finally {
             this.isProcessing = false;
             this.abortController = null;
@@ -80,7 +85,7 @@ export class PiAgentManager extends EventEmitter {
 
     async processAgentMessage(agentName: string, task: string): Promise<void> {
         const agent = this.agents.find(a => a.name === agentName);
-        if (!agent) { this.emitEvent('error', { message: `Agent not found: ${agentName}` }); return; }
+        if (!agent) { this.emitEvent('error', { message: 'Agent not found: ' + agentName }); return; }
         const config = getConfig();
         const model = resolveModel(agent.model) || config.api.model;
         const agentSession = new Session(agent.systemPrompt || buildSystemPrompt(), config.agent.maxTokens, model);
@@ -94,10 +99,10 @@ export class PiAgentManager extends EventEmitter {
             const response = await this.client.chatCompletion(agentSession.getMessagesForApi(), { model, tools: tools.length > 0 ? tools : undefined });
             const content = response.choices?.[0]?.message?.content || '';
             this.emitEvent('assistantMessage', { content, agent: agentName });
-            this.emitEvent('toolResult', { name: 'subagent', result: { content: content || '(no output)', agent: agentName } });
+            this.emitEvent('toolResult', { name: 'subagent', result: content || '(no output)', agent: agentName });
         } catch (err: any) {
-            this.logger.error(`Agent ${agentName} error: ${err.message}`);
-            this.emitEvent('error', { message: `Agent ${agentName}: ${err.message}` });
+            this.logger.error('Agent ' + agentName + ' error: ' + err.message);
+            this.emitEvent('error', { message: 'Agent ' + agentName + ': ' + err.message });
         } finally {
             this.isProcessing = false;
             this.emitEvent('status', { status: 'idle' });
@@ -119,13 +124,13 @@ export class PiAgentManager extends EventEmitter {
                 messages,
                 { tools: tools.length > 0 ? tools : undefined, maxTokens: config.agent.maxTokens },
                 (chunk: any) => {
-                    for (const choice of chunk.choices) {
+                    for (const choice of chunk.choices || []) {
                         if (choice.delta?.content) {
                             fullContent += choice.delta.content;
                             this.emitEvent('streamChunk', { content: choice.delta.content, fullContent });
                         } else if (choice.delta?.reasoning_content) {
-                            // Show reasoning content as thinking indicator
-                            this.emitEvent('streamChunk', { content: '', reasoning: choice.delta.reasoning_content, fullContent });
+                            fullContent += choice.delta.reasoning_content;
+                            this.emitEvent('streamChunk', { content: choice.delta.reasoning_content, fullContent });
                         }
                     }
                 },
@@ -133,7 +138,7 @@ export class PiAgentManager extends EventEmitter {
             );
 
             const finalChoice = response.choices[0];
-            if (!finalChoice) throw new Error('No response');
+            if (!finalChoice) throw new Error('No response from model');
 
             const finalToolCalls = finalChoice.message.tool_calls;
             if (finalToolCalls && finalToolCalls.length > 0) {
@@ -151,16 +156,21 @@ export class PiAgentManager extends EventEmitter {
                 continue;
             }
 
-            if (fullContent) {
-                this.session.addAssistantMessage(fullContent);
-                this.emitEvent('assistantMessage', { content: fullContent });
+            // No tool calls — final response
+            const finalContent = fullContent || finalChoice.message.content || '';
+            if (finalContent) {
+                this.session.addAssistantMessage(finalContent);
+                this.emitEvent('streamEnd', {});
+                this.emitEvent('assistantMessage', { content: finalContent });
             }
             return;
         }
-        this.emitEvent('error', { message: 'Max iterations exceeded' });
+        this.emitEvent('error', { message: 'Max iterations exceeded (15)' });
     }
 
-    stop(): void { if (this.abortController) this.abortController.abort(); }
+    stop(): void {
+        if (this.abortController) { this.abortController.abort(); }
+    }
 
     clearSession(): void {
         this.session.clear();

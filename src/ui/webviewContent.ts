@@ -1,870 +1,427 @@
-/**
- * webviewContent.ts
- * Generates the self-contained HTML for the Pi Agent chat webview.
- * Features: message bubbles, code blocks with copy, tool call cards,
- * typing indicator, markdown rendering, responsive dark theme.
- */
-
 import * as vscode from 'vscode';
 
-/**
- * Generate a CSP nonce for script security.
- */
 export function getNonce(): string {
     let text = '';
     const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    for (let i = 0; i < 32; i++) {
-        text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
+    for (let i = 0; i < 32; i++) { text += possible.charAt(Math.floor(Math.random() * possible.length)); }
     return text;
 }
 
-/**
- * Returns the JavaScript code that runs inside the webview.
- * Separated to avoid template-literal escaping issues with regexes.
- */
 function getWebviewScript(): string {
     return `
     (function() {
         'use strict';
-
         const vscode = acquireVsCodeApi();
-
-        const messagesContainer = document.getElementById('messages-container');
         const messagesDiv = document.getElementById('messages');
         const welcomeDiv = document.getElementById('welcome');
-        const input = document.getElementById('message-input');
+        const input = document.getElementById('chat-input');
         const sendBtn = document.getElementById('send-btn');
-        const typingIndicator = document.getElementById('typing-indicator');
-        const statusDot = document.getElementById('status-dot');
-        const statusText = document.getElementById('status-text');
+        const statusEl = document.getElementById('status-bar');
 
         let isStreaming = false;
-        let currentStreamEl = null;
+        let streamEl = null;
+        let streamRaw = '';
+        let toolCallEls = {};
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
+        function esc(t) { var d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
 
-        function renderMarkdown(text) {
+        function renderMd(text) {
             if (!text) return '';
-
-            // Normalize line endings
             text = text.replace(/\\r\\n/g, '\\n');
-
-            // Code blocks (\`\`\`lang\\ncode\\n\`\`\`)
-            text = text.replace(/\`\`\`(\\w*)\\n([\\s\\S]*?)\`\`\`/g, function(match, lang, code) {
-                var langLabel = lang || 'code';
-                var escapedCode = escapeHtml(code.trimEnd());
-                return '<div class="code-block-wrapper">' +
-                    '<div class="code-block-header">' +
-                        '<span class="code-block-lang">' + escapeHtml(langLabel) + '</span>' +
-                        '<button class="code-block-copy" onclick="copyCode(this)">\\u29C9 Copy</button>' +
-                    '</div>' +
-                    '<code class="code-block-code">' + escapedCode + '</code>' +
-                '</div>';
+            // Code blocks
+            text = text.replace(/\`\`\`(\\w*)\\n([\\s\\S]*?)\`\`\`/g, function(m, lang, code) {
+                return '<div class="cb"><div class="cb-h"><span>' + esc(lang||'code') + '</span><button onclick="copyCode(this)">Copy</button></div><pre class="cb-c"><code>' + esc(code.trimEnd()) + '</code></pre></div>';
             });
-
+            // Tables
+            text = text.replace(/(^|\\n)(\\|.+(?:\\n\\|.+)*)/g, function(m, pfx, table) {
+                var rows = table.split('\\n').filter(function(r){return r.trim();});
+                if (rows.length < 2) return m;
+                var html = '<div class="table-wrap"><table>';
+                rows.forEach(function(row, i) {
+                    var cells = row.split('|').filter(function(c){return c.trim() !== '';});
+                    if (cells.length && cells.every(function(c){return /^[-:\\s]+$/.test(c.trim());})) return;
+                    var tag = i === 0 ? 'th' : 'td';
+                    html += '<tr>' + cells.map(function(c){return '<'+tag+'>'+c.trim()+'</'+tag+'>';}).join('') + '</tr>';
+                });
+                html += '</table></div>';
+                return pfx + html;
+            });
             // Inline code
-            text = text.replace(/\`([^\\n\`]+)\`/g, '<code>$1</code>');
-
-            // Bold
+            text = text.replace(/\`([^\\n\`]+)\`/g, '<code class="ic">$1</code>');
+            // Bold + italic
             text = text.replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>');
-
-            // Italic
             text = text.replace(/\\*(.+?)\\*/g, '<em>$1</em>');
-
+            // Headers
+            text = text.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+            text = text.replace(/^## (.+)$/gm, '<h3>$1</h3>');
+            text = text.replace(/^# (.+)$/gm, '<h2>$1</h2>');
             // Links
-            text = text.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-
-            // Unordered lists
-            text = text.replace(/(^|\\n)([ \\t]*[-*+] .+(?:\\n[ \\t]*[-*+] .+)*)/g, function(match, prefix, list) {
-                var items = list.split('\\n').map(function(line) {
-                    return '<li>' + line.replace(/^[ \\t]*[-*+] /, '') + '</li>';
-                }).join('');
-                return prefix + '<ul>' + items + '</ul>';
+            text = text.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2">$1</a>');
+            // Lists
+            text = text.replace(/(^|\\n)([ \\t]*[-*+] .+(?:\\n[ \\t]*[-*+] .+)*)/g, function(m, pfx, list) {
+                return pfx + '<ul>' + list.split('\\n').map(function(l){return '<li>'+l.replace(/^[ \\t]*[-*+] /,'')+'</li>';}).join('') + '</ul>';
             });
-
-            // Ordered lists
-            text = text.replace(/(^|\\n)([ \\t]*\\d+\\. .+(?:\\n[ \\t]*\\d+\\. .+)*)/g, function(match, prefix, list) {
-                var items = list.split('\\n').map(function(line) {
-                    return '<li>' + line.replace(/^[ \\t]*\\d+\\. /, '') + '</li>';
-                }).join('');
-                return prefix + '<ol>' + items + '</ol>';
+            text = text.replace(/(^|\\n)([ \\t]*\\d+\\. .+(?:\\n[ \\t]*\\d+\\. .+)*)/g, function(m, pfx, list) {
+                return pfx + '<ol>' + list.split('\\n').map(function(l){return '<li>'+l.replace(/^[ \\t]*\\d+\\. /,'')+'</li>';}).join('') + '</ol>';
             });
-
-            // Paragraphs (double newline)
+            // Paragraphs
             text = text.split('\\n\\n').map(function(p) {
                 p = p.trim();
                 if (!p) return '';
-                if (p.indexOf('<div') === 0 || p.indexOf('<ul') === 0 || p.indexOf('<ol') === 0 || p.indexOf('<h') === 0) {
-                    return p;
-                }
+                if (/^<(div|ul|ol|table|h[234])/.test(p)) return p;
                 return '<p>' + p.replace(/\\n/g, '<br>') + '</p>';
             }).join('');
-
             return text;
         }
 
         window.copyCode = function(btn) {
-            var code = btn.closest('.code-block-wrapper').querySelector('.code-block-code');
+            var code = btn.closest('.cb').querySelector('.cb-c');
             if (code) {
                 navigator.clipboard.writeText(code.textContent);
-                var orig = btn.textContent;
-                btn.textContent = '\\u2713 Copied';
-                setTimeout(function() { btn.textContent = orig; }, 1500);
+                btn.textContent = 'Copied!';
+                setTimeout(function(){btn.textContent='Copy';}, 1500);
             }
         };
 
-        function ensureWelcomeHidden() {
-            if (welcomeDiv) { welcomeDiv.style.display = 'none'; }
+        function hideWelcome() { if (welcomeDiv) welcomeDiv.style.display='none'; }
+        function scroll() { requestAnimationFrame(function(){messagesDiv.scrollTop=messagesDiv.scrollHeight;}); }
+
+        function addMsg(role, content, agent) {
+            hideWelcome();
+            var el = document.createElement('div');
+            el.className = 'msg ' + role;
+            var avatar = role==='user' ? 'U' : 'π';
+            var name = role==='user' ? 'You' : (agent || 'Pi Agent');
+            el.innerHTML = '<div class="msg-avatar">'+avatar+'</div><div class="msg-body"><div class="msg-name">'+esc(name)+'</div><div class="msg-content">'+renderMd(content)+'</div></div>';
+            messagesDiv.appendChild(el);
+            scroll();
+            return el;
         }
 
-        function scrollToBottom() {
-            requestAnimationFrame(function() {
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            });
+        function addToolEl(name, args, status, id) {
+            hideWelcome();
+            var el = document.createElement('div');
+            el.className = 'tool-card';
+            var icon = {'read_file':'📄','write_file':'✏️','edit_file':'🔧','bash':'💻','grep':'🔍','find':'📁','git_status':'🔀','git_diff':'📊','git_diff_staged':'📊','git_add':'➕','git_commit':'💾','git_log':'📜','git_reset':'↩️','git_branch':'🌿','git_checkout':'🔀','git_show':'👁️','subagent':'🤖','ls':'📂','questionnaire':'❓'}[name] || '⚡';
+            el.innerHTML = '<div class="tool-h" onclick="this.parentElement.classList.toggle(\'open\')"><span class="tool-icon">'+icon+'</span><span class="tool-name">'+esc(name)+'</span><span class="tool-status '+status+'">'+status+'</span><span class="tool-arrow">▶</span></div><div class="tool-body"></div>';
+            el.dataset.toolId = id || name;
+            messagesDiv.appendChild(el);
+            toolCallEls[el.dataset.toolId] = el;
+            scroll();
+            return el;
         }
 
-        function addMessage(role, content, meta) {
-            ensureWelcomeHidden();
-            var messageEl = document.createElement('div');
-            messageEl.className = 'message ' + role;
-
-            var avatarLabel = role === 'user' ? '\\uD83E\\uDDD1' : role === 'system' ? '\\u2699' : '\\u03C0';
-            var headerLabel = role === 'user' ? 'You' : role === 'system' ? 'System' : 'Pi Agent';
-
-            messageEl.innerHTML =
-                '<div class="message-avatar">' + avatarLabel + '</div>' +
-                '<div class="message-body">' +
-                    '<div class="message-header">' + escapeHtml(headerLabel) + (meta ? ' \\u00B7 ' + escapeHtml(meta) : '') + '</div>' +
-                    '<div class="message-content">' + renderMarkdown(content) + '</div>' +
-                '</div>';
-
-            messagesDiv.appendChild(messageEl);
-            scrollToBottom();
-            return messageEl;
-        }
-
-        function addToolCall(name, args, status, result) {
-            ensureWelcomeHidden();
-            var toolEl = document.createElement('div');
-            toolEl.className = 'tool-call';
-
-            var statusClass = status === 'running' ? 'running' : status === 'error' ? 'error' : 'success';
-            var statusLabel = status === 'running' ? 'Running\\u2026' : status === 'error' ? 'Error' : 'Done';
-
-            var bodyContent = '';
-            if (args) {
-                var argsStr = typeof args === 'string' ? args : JSON.stringify(args, null, 2);
-                bodyContent += '<div class="tool-input"><strong>Input:</strong>\\n' + escapeHtml(argsStr) + '</div>';
-            }
+        function updateTool(id, status, result, error) {
+            var el = toolCallEls[id];
+            if (!el) return;
+            var statusEl = el.querySelector('.tool-status');
+            statusEl.className = 'tool-status '+status;
+            statusEl.textContent = status;
+            var body = el.querySelector('.tool-body');
             if (result) {
-                var resStr = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
-                bodyContent += '\\n<div class="tool-output"><strong>Output:</strong>\\n' + escapeHtml(resStr) + '</div>';
+                var resText = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+                if (resText.length > 500) resText = resText.slice(0,500) + '...';
+                body.innerHTML = '<pre class="tool-result">' + esc(resText) + '</pre>';
             }
-
-            toolEl.innerHTML =
-                '<div class="tool-call-header" onclick="this.parentElement.classList.toggle(\\'expanded\\')">' +
-                    '<span class="tool-call-icon">\\u26A1</span>' +
-                    '<span class="tool-call-name">' + escapeHtml(name) + '</span>' +
-                    '<span class="tool-call-status ' + statusClass + '">' + statusLabel + '</span>' +
-                    '<span class="tool-call-chevron">\\u25B6</span>' +
-                '</div>' +
-                '<div class="tool-call-body">' + bodyContent + '</div>';
-
-            messagesDiv.appendChild(toolEl);
-            scrollToBottom();
-            return toolEl;
+            if (error) {
+                body.innerHTML = '<pre class="tool-error">' + esc(error) + '</pre>';
+            }
+            el.classList.add('open');
+            scroll();
         }
 
         function addError(text) {
-            ensureWelcomeHidden();
-            var errEl = document.createElement('div');
-            errEl.className = 'error-message';
-            errEl.textContent = text;
-            messagesDiv.appendChild(errEl);
-            scrollToBottom();
+            hideWelcome();
+            var el = document.createElement('div');
+            el.className = 'err-msg';
+            el.innerHTML = '<span class="err-icon">⚠</span><span>'+esc(text)+'</span>';
+            messagesDiv.appendChild(el);
+            scroll();
         }
 
         function beginStream() {
-            ensureWelcomeHidden();
+            hideWelcome();
             isStreaming = true;
             sendBtn.disabled = true;
-
-            var messageEl = document.createElement('div');
-            messageEl.className = 'message assistant';
-
-            messageEl.innerHTML =
-                '<div class="message-avatar">\\u03C0</div>' +
-                '<div class="message-body">' +
-                    '<div class="message-header">Pi Agent</div>' +
-                    '<div class="message-content streaming-cursor"></div>' +
-                '</div>';
-
-            messagesDiv.appendChild(messageEl);
-            currentStreamEl = messageEl.querySelector('.message-content');
-            scrollToBottom();
+            streamRaw = '';
+            var el = document.createElement('div');
+            el.className = 'msg assistant';
+            el.innerHTML = '<div class="msg-avatar">π</div><div class="msg-body"><div class="msg-name">Pi Agent</div><div class="msg-content streaming"></div></div>';
+            messagesDiv.appendChild(el);
+            streamEl = el.querySelector('.msg-content');
+            scroll();
         }
 
         function appendStream(text) {
-            if (!currentStreamEl) { beginStream(); }
-            currentStreamEl.dataset.raw = (currentStreamEl.dataset.raw || '') + text;
-            currentStreamEl.innerHTML = escapeHtml(currentStreamEl.dataset.raw);
-            scrollToBottom();
+            if (!streamEl) beginStream();
+            streamRaw += text;
+            streamEl.innerHTML = renderMd(streamRaw);
+            scroll();
         }
 
         function endStream() {
-            if (currentStreamEl) {
-                currentStreamEl.classList.remove('streaming-cursor');
-                currentStreamEl.innerHTML = renderMarkdown(currentStreamEl.dataset.raw || '');
-                currentStreamEl = null;
+            if (streamEl) {
+                streamEl.classList.remove('streaming');
+                streamEl.innerHTML = renderMd(streamRaw);
+                streamEl = null;
+                streamRaw = '';
             }
             isStreaming = false;
             sendBtn.disabled = false;
-            scrollToBottom();
+            scroll();
         }
 
-        function showTyping(show) {
-            typingIndicator.classList.toggle('visible', show);
-            if (show) { scrollToBottom(); }
-        }
-
-        function sendMessage() {
+        function send() {
             var text = input.value.trim();
-            if (!text || isStreaming) { return; }
-
-            addMessage('user', text);
+            if (!text || isStreaming) return;
+            addMsg('user', text);
             vscode.postMessage({ type: 'userMessage', data: { text: text } });
-
             input.value = '';
             input.style.height = 'auto';
             input.focus();
         }
 
         input.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
-            }
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
         });
-
         input.addEventListener('input', function() {
             this.style.height = 'auto';
-            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+            this.style.height = Math.min(this.scrollHeight, 200) + 'px';
         });
+        sendBtn.addEventListener('click', send);
 
-        sendBtn.addEventListener('click', sendMessage);
-
-        var shortcuts = document.querySelectorAll('.shortcut[data-action]');
-        for (var i = 0; i < shortcuts.length; i++) {
-            (function(el) {
-                el.addEventListener('click', function() {
-                    var prompts = {
-                        explain: '/explain',
-                        fix: '/fix',
-                        test: '/test',
-                        refactor: '/refactor'
-                    };
-                    input.value = prompts[el.dataset.action] || '';
-                    input.focus();
-                });
-            })(shortcuts[i]);
-        }
+        // Quick actions
+        document.querySelectorAll('.qa').forEach(function(el) {
+            el.addEventListener('click', function() {
+                var cmd = el.dataset.cmd;
+                input.value = cmd || '';
+                input.focus();
+                if (cmd && cmd.startsWith('/')) { /* just fill, user sends */ }
+            });
+        });
 
         window.addEventListener('message', function(event) {
             var msg = event.data;
-            if (!msg || !msg.type) { return; }
-
+            if (!msg || !msg.type) return;
             switch (msg.type) {
-                case 'agentResponse':
-                    if (msg.data && msg.data.streaming) {
-                        appendStream(msg.data.text || '');
-                    } else {
-                        endStream();
-                        addMessage('assistant', msg.data.text || '', msg.data.meta);
-                    }
+                case 'userMessage':
+                    if (msg.data && msg.data.isCommand) { addMsg('user', msg.data.text); }
                     break;
-
-                case 'streamStart':
-                    beginStream();
+                case 'streamStart': beginStream(); break;
+                case 'streamChunk': appendStream(msg.data.text || ''); break;
+                case 'streamEnd': endStream(); break;
+                case 'assistantMessage':
+                    if (msg.data && msg.data.text) { endStream(); addMsg('assistant', msg.data.text, msg.data.agent); }
                     break;
-
-                case 'streamChunk':
-                    appendStream(msg.data.text || '');
-                    break;
-
-                case 'streamEnd':
-                    endStream();
-                    break;
-
                 case 'toolCall':
-                    addToolCall(
-                        msg.data.name,
-                        msg.data.arguments,
-                        msg.data.status || 'running',
-                        msg.data.result
-                    );
+                    addToolEl(msg.data.name, msg.data.arguments, 'running', msg.data.id || msg.data.name);
                     break;
-
                 case 'toolResult':
-                    var toolCalls = messagesDiv.querySelectorAll('.tool-call');
-                    var lastTool = toolCalls[toolCalls.length - 1];
-                    if (lastTool && lastTool.querySelector('.tool-call-name').textContent === msg.data.name) {
-                        var statusEl = lastTool.querySelector('.tool-call-status');
-                        statusEl.className = 'tool-call-status ' + (msg.data.error ? 'error' : 'success');
-                        statusEl.textContent = msg.data.error ? 'Error' : 'Done';
-                        var bodyEl = lastTool.querySelector('.tool-call-body');
-                        if (msg.data.result) {
-                            var resText = typeof msg.data.result === 'string' ? msg.data.result : JSON.stringify(msg.data.result, null, 2);
-                            bodyEl.innerHTML += '\\n<div class="tool-output"><strong>Output:</strong>\\n' + escapeHtml(resText) + '</div>';
-                        }
-                        if (msg.data.error) {
-                            bodyEl.innerHTML += '\\n<div class="tool-input" style="color: var(--vscode-errorForeground)"><strong>Error:</strong>\\n' + escapeHtml(msg.data.error) + '</div>';
-                        }
-                        lastTool.classList.add('expanded');
-                    }
+                    updateTool(msg.data.id || msg.data.name, 'done', msg.data.result, msg.data.error);
                     break;
-
                 case 'error':
                     endStream();
-                    addError(msg.data.message || msg.data.text || 'An error occurred');
+                    addError(msg.data.message || 'Unknown error');
                     break;
-
                 case 'clear':
                     messagesDiv.innerHTML = '';
-                    if (welcomeDiv) { welcomeDiv.style.display = ''; }
+                    toolCallEls = {};
+                    if (welcomeDiv) welcomeDiv.style.display = '';
                     endStream();
                     break;
-
                 case 'status':
-                    statusDot.className = 'status-dot ' + (msg.data.state || '');
-                    statusText.textContent = msg.data.text || 'Ready';
-                    showTyping(msg.data.state === 'thinking');
-                    break;
-
-                case 'typing':
-                    showTyping(!!msg.data.show);
+                    statusEl.querySelector('.st-text').textContent = msg.data.text || 'Ready';
+                    var dot = statusEl.querySelector('.st-dot');
+                    dot.className = 'st-dot ' + (msg.data.state || '');
                     break;
             }
         });
 
         vscode.postMessage({ type: 'ready' });
-    })();
-    `;
+        input.focus();
+    })();`;
 }
 
-/**
- * Returns the complete HTML content for the chat webview.
- */
 export function getChatWebviewContent(webview: vscode.Webview, extensionUri: vscode.Uri): string {
     const nonce = getNonce();
-    const cspSource = webview.cspSource;
-    const webviewScript = getWebviewScript();
+    const csp = webview.cspSource;
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="
-        default-src 'none';
-        style-src ${cspSource} 'unsafe-inline';
-        font-src ${cspSource};
-        img-src ${cspSource} https: data:;
-        script-src 'nonce-${nonce}';
-    ">
-    <title>Pi Agent Chat</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        html, body {
-            height: 100%;
-            font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
-            font-size: var(--vscode-font-size, 13px);
-            color: var(--vscode-foreground, #cccccc);
-            background: var(--vscode-sideBar-background, #1e1e1e);
-            line-height: 1.5;
-            overflow: hidden;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${csp} 'unsafe-inline'; font-src ${csp}; img-src ${csp} https: data:; script-src 'nonce-${nonce}';">
+<title>Pi Agent</title>
+<style>
+:root {
+    --bg: var(--vscode-sideBar-background, #1e1e1e);
+    --fg: var(--vscode-foreground, #cccccc);
+    --muted: var(--vscode-descriptionForeground, #888);
+    --input-bg: var(--vscode-input-background, #2d2d2d);
+    --input-border: var(--vscode-input-border, #444);
+    --hover: var(--vscode-list-hoverBackground, #2a2d2e);
+    --link: var(--vscode-textLink-foreground, #4fc1ff);
+    --accent: #6366f1;
+    --accent2: #8b5cf6;
+    --err: var(--vscode-errorForeground, #f44747);
+    --success: #4ec9b0;
+    --warn: #cca700;
+    --radius: 8px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif); font-size: var(--vscode-font-size, 13px); color: var(--fg); background: var(--bg); line-height: 1.55; overflow: hidden; }
 
-        #app {
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-        }
+#app { display: flex; flex-direction: column; height: 100vh; }
+#messages { flex: 1; overflow-y: auto; padding: 10px 12px; scroll-behavior: smooth; }
 
-        #messages-container {
-            flex: 1;
-            overflow-y: auto;
-            padding: 12px 16px;
-            scroll-behavior: smooth;
-        }
+/* Welcome */
+#welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; padding: 20px; }
+#welcome .logo { font-size: 40px; margin-bottom: 12px; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800; }
+#welcome h2 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+#welcome p { font-size: 12px; color: var(--muted); max-width: 260px; }
+.qa-grid { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; max-width: 280px; }
+.qa { padding: 8px 10px; border-radius: var(--radius); background: var(--input-bg); border: 1px solid var(--input-border); font-size: 12px; color: var(--link); cursor: pointer; text-align: left; transition: all 0.15s; }
+.qa:hover { background: var(--hover); border-color: var(--accent); }
+.qa .qa-icon { display: block; font-size: 16px; margin-bottom: 2px; }
+.qa .qa-label { font-weight: 500; }
+.qa .qa-desc { color: var(--muted); font-size: 11px; }
 
-        /* Welcome */
-        #welcome {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            text-align: center;
-            padding: 24px;
-            opacity: 0.8;
-        }
-        #welcome .logo {
-            font-size: 48px;
-            margin-bottom: 16px;
-        }
-        #welcome h2 {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: var(--vscode-foreground, #e0e0e0);
-        }
-        #welcome p {
-            font-size: 13px;
-            color: var(--vscode-descriptionForeground, #999);
-            max-width: 280px;
-            line-height: 1.6;
-        }
-        #welcome .shortcuts {
-            margin-top: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-        #welcome .shortcut {
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 4px;
-            background: var(--vscode-input-background, #2d2d2d);
-            border: 1px solid var(--vscode-input-border, #444);
-            font-size: 12px;
-            color: var(--vscode-textLink-foreground, #4fc1ff);
-            cursor: pointer;
-            transition: background 0.15s;
-        }
-        #welcome .shortcut:hover {
-            background: var(--vscode-list-hoverBackground, #2a2d2e);
-        }
+/* Messages */
+.msg { display: flex; gap: 8px; margin-bottom: 12px; animation: fadeIn 0.15s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+.msg-avatar { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; margin-top: 2px; }
+.msg.user .msg-avatar { background: var(--vscode-badge-background, #4d4d4d); color: var(--vscode-badge-foreground, #fff); }
+.msg.assistant .msg-avatar { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+.msg-body { flex: 1; min-width: 0; }
+.msg-name { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 3px; color: var(--muted); }
+.msg-content { font-size: 13px; line-height: 1.6; }
+.msg-content p { margin-bottom: 8px; }
+.msg-content p:last-child { margin-bottom: 0; }
+.msg-content h2 { font-size: 15px; font-weight: 700; margin: 12px 0 6px; }
+.msg-content h3 { font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
+.msg-content h4 { font-size: 13px; font-weight: 600; margin: 8px 0 4px; }
+.msg-content ul, .msg-content ol { margin: 6px 0 6px 20px; }
+.msg-content li { margin-bottom: 2px; }
+.msg-content a { color: var(--link); text-decoration: none; }
+.msg-content a:hover { text-decoration: underline; }
+.msg-content strong { font-weight: 600; }
+.msg-content .ic { background: var(--input-bg); padding: 1px 5px; border-radius: 3px; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
+.msg-content.streaming::after { content: '▊'; animation: blink 0.8s step-end infinite; color: var(--accent); }
+@keyframes blink { 50% { opacity: 0; } }
 
-        /* Messages */
-        .message {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 16px;
-            animation: fadeIn 0.2s ease;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(4px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+/* Code blocks */
+.cb { margin: 8px 0; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--input-border); }
+.cb-h { display: flex; justify-content: space-between; align-items: center; padding: 4px 10px; background: var(--input-bg); font-size: 11px; color: var(--muted); }
+.cb-h button { background: none; border: 1px solid var(--input-border); color: var(--muted); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+.cb-h button:hover { color: var(--fg); border-color: var(--fg); }
+.cb-c { padding: 10px 12px; overflow-x: auto; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; line-height: 1.5; background: var(--vscode-editor-background, #1e1e1e); }
+.cb-c code { white-space: pre; }
 
-        .message-avatar {
-            flex-shrink: 0;
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            font-weight: 700;
-            margin-top: 2px;
-        }
-        .message.user .message-avatar {
-            background: var(--vscode-badge-background, #4d4d4d);
-            color: var(--vscode-badge-foreground, #fff);
-        }
-        .message.assistant .message-avatar {
-            background: linear-gradient(135deg, #6366f1, #8b5cf6);
-            color: #fff;
-        }
-        .message.system .message-avatar {
-            background: var(--vscode-terminal-ansiYellow, #e5c07b);
-            color: #1e1e1e;
-        }
+/* Tables */
+.table-wrap { margin: 8px 0; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+th, td { border: 1px solid var(--input-border); padding: 5px 8px; text-align: left; }
+th { background: var(--input-bg); font-weight: 600; }
 
-        .message-body {
-            flex: 1;
-            min-width: 0;
-        }
-        .message-header {
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 4px;
-            color: var(--vscode-descriptionForeground, #888);
-        }
-        .message-content {
-            padding: 10px 14px;
-            border-radius: 8px;
-            line-height: 1.6;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-        }
-        .message.user .message-content {
-            background: var(--vscode-input-background, #2d2d2d);
-            border: 1px solid var(--vscode-input-border, #444);
-        }
-        .message.assistant .message-content {
-            background: var(--vscode-editor-inactiveSelectionBackground, #262626);
-            border: 1px solid transparent;
-        }
-        .message.system .message-content {
-            background: transparent;
-            border: 1px dashed var(--vscode-input-border, #444);
-            font-style: italic;
-            font-size: 12px;
-        }
+/* Tool cards */
+.tool-card { margin: 6px 0; border-radius: var(--radius); border: 1px solid var(--input-border); overflow: hidden; animation: fadeIn 0.15s ease; }
+.tool-h { display: flex; align-items: center; gap: 6px; padding: 6px 10px; cursor: pointer; background: var(--input-bg); user-select: none; }
+.tool-h:hover { background: var(--hover); }
+.tool-icon { font-size: 14px; }
+.tool-name { font-size: 12px; font-weight: 600; font-family: var(--vscode-editor-font-family, monospace); flex: 1; }
+.tool-status { font-size: 10px; padding: 1px 6px; border-radius: 10px; font-weight: 600; text-transform: uppercase; }
+.tool-status.running { background: var(--warn); color: #000; }
+.tool-status.done { background: var(--success); color: #000; }
+.tool-status.error { background: var(--err); color: #fff; }
+.tool-arrow { font-size: 10px; transition: transform 0.2s; color: var(--muted); }
+.tool-card.open .tool-arrow { transform: rotate(90deg); }
+.tool-body { display: none; padding: 8px 10px; font-size: 12px; }
+.tool-card.open .tool-body { display: block; }
+.tool-result { white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; padding: 6px 8px; background: var(--vscode-editor-background, #1e1e1e); border-radius: 4px; font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; line-height: 1.4; }
+.tool-error { color: var(--err); white-space: pre-wrap; padding: 6px 8px; background: rgba(244,71,71,0.08); border-radius: 4px; font-size: 11px; }
 
-        /* Markdown */
-        .message-content p { margin-bottom: 8px; }
-        .message-content p:last-child { margin-bottom: 0; }
-        .message-content strong { font-weight: 600; }
-        .message-content em { font-style: italic; }
-        .message-content ul, .message-content ol {
-            padding-left: 20px;
-            margin-bottom: 8px;
-        }
-        .message-content li { margin-bottom: 2px; }
-        .message-content a {
-            color: var(--vscode-textLink-foreground, #4fc1ff);
-            text-decoration: none;
-        }
-        .message-content a:hover { text-decoration: underline; }
+/* Error */
+.err-msg { display: flex; align-items: flex-start; gap: 6px; padding: 8px 10px; margin: 6px 0; border-radius: var(--radius); background: rgba(244,71,71,0.1); border: 1px solid rgba(244,71,71,0.3); color: var(--err); font-size: 12px; animation: fadeIn 0.15s ease; }
+.err-icon { font-size: 14px; flex-shrink: 0; }
 
-        /* Inline code */
-        .message-content code:not(.code-block-code) {
-            font-family: var(--vscode-editor-font-family, 'Fira Code', monospace);
-            font-size: 0.9em;
-            padding: 1px 5px;
-            border-radius: 3px;
-            background: var(--vscode-textCodeBlock-background, #3c3c3c);
-            color: var(--vscode-textPreformat-foreground, #e06c75);
-        }
+/* Input area */
+#input-area { padding: 8px 12px 6px; border-top: 1px solid var(--input-border); }
+#input-wrap { display: flex; align-items: flex-end; gap: 6px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: var(--radius); padding: 6px 8px; transition: border-color 0.15s; }
+#input-wrap:focus-within { border-color: var(--accent); }
+#chat-input { flex: 1; background: none; border: none; color: var(--fg); font-family: inherit; font-size: 13px; line-height: 1.5; resize: none; outline: none; min-height: 20px; max-height: 200px; }
+#chat-input::placeholder { color: var(--muted); }
+#send-btn { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); border: none; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.15s; }
+#send-btn:hover { background: var(--accent2); }
+#send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-        /* Code blocks */
-        .code-block-wrapper {
-            position: relative;
-            margin: 8px 0;
-            border-radius: 6px;
-            overflow: hidden;
-            background: var(--vscode-editor-background, #1e1e1e);
-            border: 1px solid var(--vscode-editorWidget-border, #444);
-        }
-        .code-block-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 4px 8px;
-            background: var(--vscode-editorWidget-background, #252526);
-            border-bottom: 1px solid var(--vscode-editorWidget-border, #444);
-            font-size: 11px;
-            color: var(--vscode-descriptionForeground, #888);
-        }
-        .code-block-lang {
-            font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .code-block-copy {
-            background: none;
-            border: none;
-            color: var(--vscode-descriptionForeground, #888);
-            cursor: pointer;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 11px;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            transition: all 0.15s;
-        }
-        .code-block-copy:hover {
-            background: var(--vscode-toolbar-hoverBackground, #3c3c3c);
-            color: var(--vscode-foreground, #ccc);
-        }
-        .code-block-code {
-            display: block;
-            padding: 12px;
-            overflow-x: auto;
-            font-family: var(--vscode-editor-font-family, 'Fira Code', monospace);
-            font-size: var(--vscode-editor-font-size, 13px);
-            line-height: 1.5;
-            color: var(--vscode-editor-foreground, #d4d4d4);
-            tab-size: 4;
-            white-space: pre;
-        }
+/* Status bar */
+#status-bar { display: flex; align-items: center; gap: 6px; padding: 4px 12px; font-size: 11px; color: var(--muted); }
+.st-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+.st-dot.thinking { background: var(--warn); animation: pulse 1s infinite; }
+.st-dot.error { background: var(--err); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-        /* Tool call cards */
-        .tool-call {
-            margin: 8px 0;
-            border-radius: 6px;
-            border: 1px solid var(--vscode-editorWidget-border, #444);
-            overflow: hidden;
-            background: var(--vscode-editorWidget-background, #252526);
-        }
-        .tool-call-header {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 12px;
-            cursor: pointer;
-            user-select: none;
-            transition: background 0.15s;
-        }
-        .tool-call-header:hover {
-            background: var(--vscode-list-hoverBackground, #2a2d2e);
-        }
-        .tool-call-icon { font-size: 14px; }
-        .tool-call-name {
-            font-weight: 600;
-            font-size: 12px;
-            color: var(--vscode-textLink-foreground, #4fc1ff);
-            flex: 1;
-        }
-        .tool-call-status {
-            font-size: 11px;
-            padding: 1px 6px;
-            border-radius: 3px;
-        }
-        .tool-call-status.running {
-            background: var(--vscode-progressBar-background, #0078d4);
-            color: #fff;
-        }
-        .tool-call-status.success {
-            background: var(--vscode-terminal-ansiGreen, #4ec9b0);
-            color: #1e1e1e;
-        }
-        .tool-call-status.error {
-            background: var(--vscode-errorForeground, #f44747);
-            color: #fff;
-        }
-        .tool-call-chevron {
-            font-size: 10px;
-            transition: transform 0.2s;
-            color: var(--vscode-descriptionForeground, #888);
-        }
-        .tool-call.expanded .tool-call-chevron {
-            transform: rotate(90deg);
-        }
-        .tool-call-body {
-            display: none;
-            padding: 8px 12px;
-            border-top: 1px solid var(--vscode-editorWidget-border, #444);
-            font-family: var(--vscode-editor-font-family, monospace);
-            font-size: 12px;
-            line-height: 1.5;
-            max-height: 300px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            color: var(--vscode-descriptionForeground, #aaa);
-        }
-        .tool-call.expanded .tool-call-body {
-            display: block;
-        }
-        .tool-call-body .tool-input {
-            color: var(--vscode-terminal-ansiYellow, #e5c07b);
-        }
-        .tool-call-body .tool-output {
-            color: var(--vscode-foreground, #ccc);
-        }
-
-        /* Streaming cursor */
-        .streaming-cursor::after {
-            content: '\\25CA';
-            animation: blink 0.8s step-end infinite;
-            color: var(--vscode-editor-foreground, #ccc);
-        }
-        @keyframes blink {
-            50% { opacity: 0; }
-        }
-
-        /* Typing indicator */
-        .typing-indicator {
-            display: none;
-            align-items: center;
-            gap: 10px;
-            padding: 8px 0;
-            margin-bottom: 16px;
-        }
-        .typing-indicator.visible {
-            display: flex;
-        }
-        .typing-dots {
-            display: flex;
-            gap: 4px;
-            padding: 8px 14px;
-            background: var(--vscode-editor-inactiveSelectionBackground, #262626);
-            border-radius: 8px;
-        }
-        .typing-dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: var(--vscode-descriptionForeground, #888);
-            animation: typingBounce 1.4s ease-in-out infinite;
-        }
-        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
-        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes typingBounce {
-            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-            30% { transform: translateY(-4px); opacity: 1; }
-        }
-
-        /* Status bar */
-        .status-bar {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 12px;
-            font-size: 11px;
-            color: var(--vscode-descriptionForeground, #888);
-            border-top: 1px solid var(--vscode-panel-border, #333);
-            background: var(--vscode-sideBar-background, #1e1e1e);
-        }
-        .status-dot {
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background: var(--vscode-terminal-ansiGreen, #4ec9b0);
-        }
-        .status-dot.thinking { background: var(--vscode-progressBar-background, #0078d4); animation: pulse 1.5s infinite; }
-        .status-dot.error { background: var(--vscode-errorForeground, #f44747); }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
-        }
-
-        /* Input area */
-        #input-area {
-            padding: 12px 16px;
-            border-top: 1px solid var(--vscode-panel-border, #333);
-            background: var(--vscode-sideBar-background, #1e1e1e);
-        }
-        #input-wrapper {
-            display: flex;
-            align-items: flex-end;
-            gap: 8px;
-            background: var(--vscode-input-background, #2d2d2d);
-            border: 1px solid var(--vscode-input-border, #444);
-            border-radius: 8px;
-            padding: 8px;
-            transition: border-color 0.2s;
-        }
-        #input-wrapper:focus-within {
-            border-color: var(--vscode-focusBorder, #0078d4);
-        }
-        #message-input {
-            flex: 1;
-            background: none;
-            border: none;
-            outline: none;
-            color: var(--vscode-input-foreground, #ccc);
-            font-family: var(--vscode-font-family, sans-serif);
-            font-size: var(--vscode-font-size, 13px);
-            line-height: 1.5;
-            resize: none;
-            min-height: 20px;
-            max-height: 120px;
-            padding: 0;
-        }
-        #message-input::placeholder {
-            color: var(--vscode-input-placeholderForeground, #666);
-        }
-        #send-btn {
-            flex-shrink: 0;
-            width: 32px;
-            height: 32px;
-            border: none;
-            border-radius: 6px;
-            background: var(--vscode-button-background, #0078d4);
-            color: var(--vscode-button-foreground, #fff);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 16px;
-            transition: background 0.15s;
-        }
-        #send-btn:hover {
-            background: var(--vscode-button-hoverBackground, #1a8cff);
-        }
-        #send-btn:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-        }
-
-        /* Scrollbar */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb {
-            background: var(--vscode-scrollbarSlider-background, #424242);
-            border-radius: 3px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--vscode-scrollbarSlider-hoverBackground, #555);
-        }
-
-        /* Error */
-        .error-message {
-            background: rgba(244, 71, 71, 0.1);
-            border: 1px solid var(--vscode-errorForeground, #f44747);
-            color: var(--vscode-errorForeground, #f44747);
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            margin: 8px 0;
-        }
-    </style>
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--input-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+</style>
 </head>
 <body>
-    <div id="app">
-        <div id="messages-container">
-            <div id="welcome">
-                <div class="logo">&#x03C0;</div>
-                <h2>Pi Agent</h2>
-                <p>Ask me anything about your code. I can explain, fix, refactor, write tests, and more.</p>
-                <div class="shortcuts">
-                    <span class="shortcut" data-action="explain">&#x1F4A1; Explain code</span>
-                    <span class="shortcut" data-action="fix">&#x1F527; Fix errors</span>
-                    <span class="shortcut" data-action="test">&#x1F9EA; Write tests</span>
-                    <span class="shortcut" data-action="refactor">&#x267B; Refactor</span>
+<div id="app">
+    <div id="messages">
+        <div id="welcome">
+            <div class="logo">π Agent</div>
+            <h2>How can I help you?</h2>
+            <p>AI coding assistant with tools, agents, and more</p>
+            <div class="qa-grid">
+                <div class="qa" data-cmd="/explain">
+                    <span class="qa-icon">💡</span>
+                    <span class="qa-label">/explain</span>
+                    <span class="qa-desc">Explain code</span>
+                </div>
+                <div class="qa" data-cmd="/fix">
+                    <span class="qa-icon">🔧</span>
+                    <span class="qa-label">/fix</span>
+                    <span class="qa-desc">Fix errors</span>
+                </div>
+                <div class="qa" data-cmd="/test">
+                    <span class="qa-icon">🧪</span>
+                    <span class="qa-label">/test</span>
+                    <span class="qa-desc">Generate tests</span>
+                </div>
+                <div class="qa" data-cmd="/review">
+                    <span class="qa-icon">👁</span>
+                    <span class="qa-label">/review</span>
+                    <span class="qa-desc">Review code</span>
+                </div>
+                <div class="qa" data-cmd="/plan ">
+                    <span class="qa-icon">📋</span>
+                    <span class="qa-label">/plan</span>
+                    <span class="qa-desc">Create plan</span>
+                </div>
+                <div class="qa" data-cmd="/commit">
+                    <span class="qa-icon">💾</span>
+                    <span class="qa-label">/commit</span>
+                    <span class="qa-desc">Commit msg</span>
                 </div>
             </div>
-            <div id="messages"></div>
-            <div id="typing-indicator" class="typing-indicator">
-                <div class="message-avatar" style="background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-size: 14px; font-weight: 700;">&#x03C0;</div>
-                <div class="typing-dots">
-                    <div class="typing-dot"></div>
-                    <div class="typing-dot"></div>
-                    <div class="typing-dot"></div>
-                </div>
-            </div>
-        </div>
-        <div id="input-area">
-            <div id="input-wrapper">
-                <textarea id="message-input"
-                    rows="1"
-                    placeholder="Ask Pi Agent&#x2026; (Shift+Enter for newline)"
-                    autocomplete="off"
-                    spellcheck="false"></textarea>
-                <button id="send-btn" title="Send message (Enter)">&#x25B6;</button>
-            </div>
-        </div>
-        <div class="status-bar">
-            <span class="status-dot" id="status-dot"></span>
-            <span id="status-text">Ready</span>
         </div>
     </div>
-
-    <script nonce="${nonce}">
-${webviewScript}
-    </script>
+    <div id="input-area">
+        <div id="input-wrap">
+            <textarea id="chat-input" rows="1" placeholder="Ask Pi Agent... (/ for commands)" spellcheck="true"></textarea>
+            <button id="send-btn" title="Send">▶</button>
+        </div>
+    </div>
+    <div id="status-bar">
+        <span class="st-dot"></span>
+        <span class="st-text">Ready</span>
+    </div>
+</div>
+<script nonce="${nonce}">${getWebviewScript()}</script>
 </body>
 </html>`;
 }

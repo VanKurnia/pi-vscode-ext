@@ -7,18 +7,35 @@ import { createBashTool } from './bash';
 import { createGrepTool, createFindTool } from './search';
 import { createGitTools } from './git';
 import { createSubagentTool } from './subagent';
+import { createLsTool, createPwdTool, createContextTool, createDiagnosticsTool, createGetOpenEditorsTool, createReplaceInFileTool } from './vscode-tools';
 
 export function registerAllTools(registry: ToolRegistry, client?: LlmClient): void {
+    // File operations
     registry.register(createReadFileTool());
     registry.register(createWriteFileTool());
     registry.register(createEditFileTool());
-    registry.register(createBashTool());
+    registry.register(createReplaceInFileTool());
+
+    // Search
     registry.register(createGrepTool());
     registry.register(createFindTool());
+
+    // Shell
+    registry.register(createBashTool());
+    registry.register(createLsTool());
+    registry.register(createPwdTool());
+
+    // Git
     for (const tool of createGitTools()) {
         registry.register(tool);
     }
-    // Subagent tool - needs LlmClient for delegation
+
+    // VSCode
+    registry.register(createContextTool());
+    registry.register(createDiagnosticsTool());
+    registry.register(createGetOpenEditorsTool());
+
+    // Subagent (needs LlmClient)
     if (client) {
         registry.register(createSubagentTool(client));
     }
