@@ -1,5 +1,5 @@
-import { Tool } from '../agent/tools';
-import { TodoTreeProvider } from '../ui/todoProvider';
+import { Tool } from '../agent/tools.js';
+import { TodoTreeProvider } from '../ui/todoProvider.js';
 
 export function createTodoTool(provider: TodoTreeProvider): Tool {
     return {

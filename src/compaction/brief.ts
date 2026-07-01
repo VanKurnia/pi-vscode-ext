@@ -3,10 +3,10 @@
  *
  * Ported from pi-blackhole (src/core/brief.ts).
  */
-import type { NormalizedBlock } from './types';
-import { clip, firstLine } from './content';
-import { extractPath } from './tool-args';
-import { collapseSkillText } from './skill-collapse';
+import type { NormalizedBlock } from './types.js';
+import { clip, firstLine } from './content.js';
+import { extractPath } from './tool-args.js';
+import { collapseSkillText } from './skill-collapse.js';
 
 const TRUNCATE_USER = 256;
 const TRUNCATE_ASSISTANT = 200;

@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { Tool } from '../agent/tools';
+import { Tool } from '../agent/tools.js';
 
 export function createAskUserQuestionTool(): Tool {
     return {

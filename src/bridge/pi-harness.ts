@@ -23,15 +23,15 @@ import {
     type AgentTool,
 } from '@earendil-works/pi-agent-core/node';
 import type { Model } from '@earendil-works/pi-ai';
-import type { PiBridgeConfig, PiBridgeContext } from './types';
+import type { PiBridgeConfig, PiBridgeContext } from './types.js';
 import {
     resolveChatModel,
     resolveCompletionModel,
     createApiKeyResolver,
     buildProviderConfig,
-} from './provider-bridge';
-import { createSessionRepo, openOrCreateSession, getWorkspaceCwd } from './session-bridge';
-import { Logger } from '../utils/logger';
+} from './provider-bridge.js';
+import { createSessionRepo, openOrCreateSession, getWorkspaceCwd } from './session-bridge.js';
+import { Logger } from '../utils/logger.js';
 
 const logger = Logger.getInstance();
 

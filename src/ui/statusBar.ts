@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 // PiAgentManager replaced by bridge — using any for now
-import { getConfig } from '../utils/config';
+import { getConfig } from '../utils/config.js';
 
 export class StatusBarManager {
     private statusItem: vscode.StatusBarItem;

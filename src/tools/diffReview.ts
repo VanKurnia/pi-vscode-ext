@@ -1,9 +1,9 @@
-import { Tool } from '../agent/tools';
+import { Tool } from '../agent/tools.js';
 
 // We re-use runGit from git.ts — but it's not exported.
 // Duplicate a lightweight version that invokes git the same way.
 import { spawn } from 'child_process';
-import { getWorkspaceRoot, resolveSafePath } from '../utils/pathGuard';
+import { getWorkspaceRoot, resolveSafePath } from '../utils/pathGuard.js';
 
 function runGit(args: string[], cwd?: string): Promise<string> {
     return new Promise((resolve, reject) => {

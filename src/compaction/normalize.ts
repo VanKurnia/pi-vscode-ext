@@ -4,9 +4,9 @@
  * Ported from pi-blackhole (src/core/normalize.ts).
  */
 import type { Message } from '@earendil-works/pi-ai';
-import type { NormalizedBlock } from './types';
-import { textOf } from './content';
-import { sanitize } from './sanitize';
+import type { NormalizedBlock } from './types.js';
+import { textOf } from './content.js';
+import { sanitize } from './sanitize.js';
 
 // Mirrors pi-agent-core's BashExecutionMessage
 interface LocalBashMessage {

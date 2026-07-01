@@ -4,10 +4,8 @@
 **/.gitignore
 **/tsconfig.json
 **/.eslintrc.json
-**/webpack.config.js
 **/vsc-extension-quickstart.md
 **/.vscode-test/**
-**/out/**
 **/.env*
 **/.git/**
 **/agents/*.json

@@ -1,6 +1,6 @@
 // Browser context globals (used inside page.evaluate callbacks)
 declare const document: any;
-import { Tool } from '../agent/tools';
+import { Tool } from '../agent/tools.js';
 
 // Shared browser state
 interface BrowserState {
@@ -13,7 +13,8 @@ const state: BrowserState = { browser: null, page: null, port: 9222 };
 
 async function getPuppeteer(): Promise<any> {
     try {
-        return require('puppeteer-core');
+        // @ts-ignore - optional dependency
+        const mod = await import('puppeteer-core'); return mod.default || mod;
     } catch {
         throw new Error(
             'puppeteer-core is not installed. Run: npm install puppeteer-core'
@@ -252,7 +253,8 @@ function createBrowserScreenshotTool(): Tool {
                     }
                     const buf = await el.screenshot(opts);
                     if (args?.save_path) {
-                        const fs = require('fs');
+                        // @ts-ignore - built-in module
+                        const fs = await import('fs');
                         fs.writeFileSync(args.save_path, buf);
                         return {
                             content: `Screenshot saved to ${args.save_path} (${buf.length} bytes)`,

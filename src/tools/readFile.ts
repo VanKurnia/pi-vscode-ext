@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { Tool } from '../agent/tools';
-import { resolveSafePath } from '../utils/pathGuard';
+import { Tool } from '../agent/tools.js';
+import { resolveSafePath } from '../utils/pathGuard.js';
 
 export function createReadFileTool(): Tool {
     return {

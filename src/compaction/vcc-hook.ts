@@ -7,7 +7,7 @@
 import type { AgentHarness } from '@earendil-works/pi-agent-core/node';
 import { convertToLlm } from '@earendil-works/pi-agent-core';
 import type { AgentMessage, SessionBeforeCompactEvent, SessionBeforeCompactResult } from '@earendil-works/pi-agent-core';
-import { compile } from './summarize';
+import { compile } from './summarize.js';
 
 /**
  * Register the VCC compaction hook on an AgentHarness instance.

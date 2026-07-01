@@ -7,8 +7,8 @@
  */
 
 import type { Model } from '@earendil-works/pi-ai';
-import type { ProviderConfig, ResolvedModel } from './types';
-import { Logger } from '../utils/logger';
+import type { ProviderConfig, ResolvedModel } from './types.js';
+import { Logger } from '../utils/logger.js';
 
 const logger = Logger.getInstance();
 

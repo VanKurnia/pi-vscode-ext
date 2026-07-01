@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { Tool } from '../agent/tools';
-import { getConfig } from '../utils/config';
+import { Tool } from '../agent/tools.js';
+import { getConfig } from '../utils/config.js';
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_SEARCH_RESULTS = 5;

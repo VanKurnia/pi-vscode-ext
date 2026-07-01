@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { Tool } from '../agent/tools';
-import { resolveSafePath, getWorkspaceRoot } from '../utils/pathGuard';
+import { Tool } from '../agent/tools.js';
+import { resolveSafePath, getWorkspaceRoot } from '../utils/pathGuard.js';
 
 export function createLsTool(): Tool {
     return {

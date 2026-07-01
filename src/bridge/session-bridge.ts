@@ -1,3 +1,4 @@
+import * as vscode from "vscode";
 /**
  * Session Bridge — manages pi-agent-core sessions with JSONL persistence.
  *
@@ -15,7 +16,7 @@ import {
     type Session,
     type JsonlSessionMetadata,
 } from '@earendil-works/pi-agent-core/node';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 
 const logger = Logger.getInstance();
 
@@ -114,9 +115,7 @@ export async function deleteSession(
  * Returns the first workspace folder's path, or home directory as fallback.
  */
 export function getWorkspaceCwd(): string {
-    // Dynamic import to avoid circular dependency with vscode module
     try {
-        const vscode = require('vscode');
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (workspaceFolder) {
             return workspaceFolder.uri.fsPath;

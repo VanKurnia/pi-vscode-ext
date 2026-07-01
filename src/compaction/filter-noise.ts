@@ -3,7 +3,7 @@
  *
  * Ported from pi-blackhole (src/core/filter-noise.ts).
  */
-import type { NormalizedBlock } from './types';
+import type { NormalizedBlock } from './types.js';
 
 const NOISE_TOOLS = new Set([
   'TodoWrite', 'TodoRead', 'ToolSearch', 'WebSearch',

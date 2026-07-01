@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 // LlmClient replaced by bridge — using any for now
-import { getConfig, getCompletionModel } from '../utils/config';
-import { Logger } from '../utils/logger';
+import { getConfig, getCompletionModel } from '../utils/config.js';
+import { Logger } from '../utils/logger.js';
 
 export class InlineCompletionProvider implements vscode.InlineCompletionItemProvider {
     private client: any;

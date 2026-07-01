@@ -4,11 +4,11 @@
  * Ported from pi-blackhole (src/core/summarize.ts).
  */
 import type { Message } from '@earendil-works/pi-ai';
-import type { FileOps } from './types';
-import { normalize } from './normalize';
-import { filterNoise } from './filter-noise';
-import { buildSections } from './build-sections';
-import { formatSummary, capBrief, RECALL_NOTE, wrapLongLines } from './format';
+import type { FileOps } from './types.js';
+import { normalize } from './normalize.js';
+import { filterNoise } from './filter-noise.js';
+import { buildSections } from './build-sections.js';
+import { formatSummary, capBrief, RECALL_NOTE, wrapLongLines } from './format.js';
 
 export interface CompileInput {
   messages: Message[];

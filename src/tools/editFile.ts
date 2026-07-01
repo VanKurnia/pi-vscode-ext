@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as diffLib from 'diff';
-import { Tool } from '../agent/tools';
-import { resolveSafePath } from '../utils/pathGuard';
+import { Tool } from '../agent/tools.js';
+import { resolveSafePath } from '../utils/pathGuard.js';
 
 export function createEditFileTool(): Tool {
     return {

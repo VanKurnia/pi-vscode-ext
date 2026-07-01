@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { AgentConfig } from '../agent/agents';
+import { AgentConfig } from '../agent/agents.js';
 
 export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentTreeItem>, vscode.Disposable {
     private _onDidChangeTreeData = new vscode.EventEmitter<AgentTreeItem | undefined | null | void>();

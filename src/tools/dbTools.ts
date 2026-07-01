@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { Tool } from '../agent/tools';
-import { getWorkspaceRoot } from '../utils/pathGuard';
+import { Tool } from '../agent/tools.js';
+import { getWorkspaceRoot } from '../utils/pathGuard.js';
 
 // ── Database connection management ──────────────────────────────────
 
@@ -57,7 +57,8 @@ function formatAsMarkdownTable(columns: string[], rows: any[][]): string {
 async function openSqlite(dbPath: string): Promise<any> {
     try {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const mod = require('better-sqlite3');
+        // @ts-ignore - optional dependency
+        const mod = (await import('better-sqlite3')).default;
         const Database = mod.default || mod;
         return new Database(dbPath);
     } catch {
@@ -135,7 +136,8 @@ async function queryGeneric(conn: DbConnection, sql: string, limit: number = 50)
     if (conn.type === 'postgresql') {
         try {
             // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const pg = require('pg');
+            // @ts-ignore - optional dependency
+            const pg = (await import('pg')).default;
             const { Client } = pg.default || pg;
             const client = new Client({ connectionString: conn.connectionString });
             await client.connect();
@@ -166,7 +168,8 @@ async function queryGeneric(conn: DbConnection, sql: string, limit: number = 50)
     if (conn.type === 'mysql') {
         try {
             // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const mysql = require('mysql2/promise');
+            // @ts-ignore - optional dependency
+            const mysql = await import('mysql2/promise');
             const pool = mysql.default || mysql;
             const safeSql = sanitizeSql(sql);
             if (isDangerous(safeSql)) {

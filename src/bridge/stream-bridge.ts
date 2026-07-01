@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import type { AgentHarness } from '@earendil-works/pi-agent-core/node';
 import type { AssistantMessage, TextContent } from '@earendil-works/pi-ai';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 
 const logger = Logger.getInstance();
 

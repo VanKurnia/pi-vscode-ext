@@ -3,7 +3,7 @@
  */
 
 // Harness factory
-export { createBridge, readConfig } from './pi-harness';
+export { createBridge, readConfig } from './pi-harness.js';
 
 // Provider bridge
 export {
@@ -12,7 +12,7 @@ export {
     resolveCompletionModel,
     createApiKeyResolver,
     buildProviderConfig,
-} from './provider-bridge';
+} from './provider-bridge.js';
 
 // Session bridge
 export {
@@ -23,13 +23,13 @@ export {
     listSessions,
     deleteSession,
     getWorkspaceCwd,
-} from './session-bridge';
+} from './session-bridge.js';
 
 // Stream bridge — harness events → VSCode ChatResponseStream
-export { streamFromHarness } from './stream-bridge';
+export { streamFromHarness } from './stream-bridge.js';
 
 // UI bridge — VSCode dialogs for agent interaction
-export { createUIBridge, type UIBridge } from './ui-bridge';
+export { createUIBridge, type UIBridge } from './ui-bridge.js';
 
 // Types
 export type {
@@ -43,4 +43,4 @@ export type {
     ResolvedModel,
     CreateSessionOptions,
     ListSessionOptions,
-} from './types';
+} from './types.js';

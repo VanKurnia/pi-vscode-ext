@@ -1,4 +1,4 @@
-import { Tool } from '../agent/tools';
+import { Tool } from '../agent/tools.js';
 import type { Session } from '@earendil-works/pi-agent-core/node';
 import type { AgentMessage, SessionContext } from '@earendil-works/pi-agent-core';
 import type { TextContent, ThinkingContent, ToolCall, UserMessage, AssistantMessage, ToolResultMessage } from '@earendil-works/pi-ai';

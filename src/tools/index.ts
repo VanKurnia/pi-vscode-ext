@@ -1,25 +1,25 @@
-import { ToolRegistry } from '../agent/tools';
+import { ToolRegistry } from '../agent/tools.js';
 import type { Session } from '@earendil-works/pi-agent-core/node';
-import { createReadFileTool } from './readFile';
-import { createWriteFileTool } from './writeFile';
-import { createEditFileTool } from './editFile';
-import { createBashTool } from './bash';
-import { createGrepTool, createFindTool, createMultiGrepTool } from './search';
-import { createGitTools } from './git';
-import { createSubagentTool } from './subagent';
-import { createLsTool, createPwdTool, createContextTool, createDiagnosticsTool, createGetOpenEditorsTool, createReplaceInFileTool } from './vscode-tools';
-import { createAskUserQuestionTool } from './askUserQuestion';
-import { createWebSearchTool, createWebFetchTool } from './webTools';
-import { createRecallTool } from './recall';
-import { createDbTools } from './dbTools';
-import { createSkillTools } from './skillTools';
-import { createTodoTool } from './todoTool';
-import { createCommitTools } from './commitTools';
-import { createFuzzyFindTool, createFuzzyOpenTool } from './fuzzyFind';
-import { createDiffReviewTools } from './diffReview';
-import { createBrowserTools } from './browser';
-import { SkillDiscovery } from '../agent/skills';
-import { TodoTreeProvider } from '../ui/todoProvider';
+import { createReadFileTool } from './readFile.js';
+import { createWriteFileTool } from './writeFile.js';
+import { createEditFileTool } from './editFile.js';
+import { createBashTool } from './bash.js';
+import { createGrepTool, createFindTool, createMultiGrepTool } from './search.js';
+import { createGitTools } from './git.js';
+import { createSubagentTool } from './subagent.js';
+import { createLsTool, createPwdTool, createContextTool, createDiagnosticsTool, createGetOpenEditorsTool, createReplaceInFileTool } from './vscode-tools.js';
+import { createAskUserQuestionTool } from './askUserQuestion.js';
+import { createWebSearchTool, createWebFetchTool } from './webTools.js';
+import { createRecallTool } from './recall.js';
+import { createDbTools } from './dbTools.js';
+import { createSkillTools } from './skillTools.js';
+import { createTodoTool } from './todoTool.js';
+import { createCommitTools } from './commitTools.js';
+import { createFuzzyFindTool, createFuzzyOpenTool } from './fuzzyFind.js';
+import { createDiffReviewTools } from './diffReview.js';
+import { createBrowserTools } from './browser.js';
+import { SkillDiscovery } from '../agent/skills.js';
+import { TodoTreeProvider } from '../ui/todoProvider.js';
 
 export function registerAllTools(
     registry: ToolRegistry,

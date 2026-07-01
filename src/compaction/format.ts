@@ -4,7 +4,7 @@
  * Ported from pi-blackhole (src/core/format.ts).
  * Replaces wrapTextWithAnsi from @earendil-works/pi-tui with simple word-wrap.
  */
-import type { SectionData } from './types';
+import type { SectionData } from './types.js';
 
 const section = (title: string, items: string[]): string => {
   if (items.length === 0) return '';

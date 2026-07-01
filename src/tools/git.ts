@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { spawn } from 'child_process';
-import { Tool } from '../agent/tools';
-import { getWorkspaceRoot, resolveSafePath } from '../utils/pathGuard';
+import { Tool } from '../agent/tools.js';
+import { getWorkspaceRoot, resolveSafePath } from '../utils/pathGuard.js';
 
 function runGit(args: string[], cwd?: string): Promise<string> {
     return new Promise((resolve, reject) => {

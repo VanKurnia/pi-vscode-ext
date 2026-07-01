@@ -6,7 +6,7 @@
  *
  * Pipeline: normalize → filterNoise → buildSections → formatSummary
  */
-export { registerVccCompaction } from './vcc-hook';
-export { compile } from './summarize';
-export type { CompileInput } from './summarize';
-export type { NormalizedBlock, SectionData, FileOps } from './types';
+export { registerVccCompaction } from './vcc-hook.js';
+export { compile } from './summarize.js';
+export type { CompileInput } from './summarize.js';
+export type { NormalizedBlock, SectionData, FileOps } from './types.js';

@@ -5,17 +5,17 @@
  */
 
 import * as vscode from 'vscode';
-import { createBridge } from './bridge';
-import type { PiBridgeContext } from './bridge/types';
-import { StatusBarManager } from './ui/statusBar';
-import { InlineCompletionProvider } from './ui/inlineCompletion';
-import { AgentsTreeProvider } from './ui/agentsTreeProvider';
-import { ChangesTreeProvider } from './ui/changesTreeProvider';
-import { TodoTreeProvider } from './ui/todoProvider';
-import { Logger } from './utils/logger';
-import { getConfig, onConfigChange } from './utils/config';
-import { registerChatParticipant } from './chat/participant';
-import { runCommand } from './chat/commands';
+import { createBridge } from './bridge/index.js';
+import type { PiBridgeContext } from './bridge/types.js';
+import { StatusBarManager } from './ui/statusBar.js';
+import { InlineCompletionProvider } from './ui/inlineCompletion.js';
+import { AgentsTreeProvider } from './ui/agentsTreeProvider.js';
+import { ChangesTreeProvider } from './ui/changesTreeProvider.js';
+import { TodoTreeProvider } from './ui/todoProvider.js';
+import { Logger } from './utils/logger.js';
+import { getConfig, onConfigChange } from './utils/config.js';
+import { registerChatParticipant } from './chat/participant.js';
+import { runCommand } from './chat/commands.js';
 
 let bridge: PiBridgeContext;
 let statusBar: StatusBarManager;

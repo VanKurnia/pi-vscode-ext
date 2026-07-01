@@ -1,9 +1,9 @@
-import { Tool, ToolRegistry } from '../agent/tools';
+import { Tool, ToolRegistry } from '../agent/tools.js';
 import type { AgentHarness } from '@earendil-works/pi-agent-core/node';
 import type { TextContent } from '@earendil-works/pi-ai';
-import { getChatModel } from '../utils/config';
-import { discoverAgents, AgentConfig, resolveModel } from '../agent/agents';
-import { Logger } from '../utils/logger';
+import { getChatModel } from '../utils/config.js';
+import { discoverAgents, AgentConfig, resolveModel } from '../agent/agents.js';
+import { Logger } from '../utils/logger.js';
 import * as vscode from 'vscode';
 
 export function createSubagentTool(harness: AgentHarness, toolRegistry?: ToolRegistry): Tool {

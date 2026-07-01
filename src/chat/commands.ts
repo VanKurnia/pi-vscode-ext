@@ -5,9 +5,9 @@
 
 import * as vscode from 'vscode';
 import type { AgentHarness } from '@earendil-works/pi-agent-core/node';
-import { streamFromHarness } from '../bridge/stream-bridge';
-import type { PlanModeManager } from './planMode';
-import type { SpeedTracker } from '../tools/speedMeter';
+import { streamFromHarness } from '../bridge/stream-bridge.js';
+import type { PlanModeManager } from './planMode.js';
+import type { SpeedTracker } from '../tools/speedMeter.js';
 
 const noopToken: vscode.CancellationToken = {
     isCancellationRequested: false,

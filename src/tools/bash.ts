@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import { spawn } from 'child_process';
-import { Tool } from '../agent/tools';
-import { getBashGuard } from './bashGuard';
-import { getConfig } from '../utils/config';
-import { getWorkspaceRoot, resolveSafePath } from '../utils/pathGuard';
+import { Tool } from '../agent/tools.js';
+import { getBashGuard } from './bashGuard.js';
+import { getConfig } from '../utils/config.js';
+import { getWorkspaceRoot, resolveSafePath } from '../utils/pathGuard.js';
 
 export function createBashTool(): Tool {
     return {

@@ -4,13 +4,13 @@
  */
 
 import * as vscode from 'vscode';
-import type { PiBridgeContext } from '../bridge/types';
-import { streamFromHarness } from '../bridge/stream-bridge';
-import { handleSlashCommand, helpMarkdown } from './commands';
-import { PlanModeManager } from './planMode';
-import { SpeedTracker } from '../tools/speedMeter';
-import { registerVccCompaction } from '../compaction';
-import { Logger } from '../utils/logger';
+import type { PiBridgeContext } from '../bridge/types.js';
+import { streamFromHarness } from '../bridge/stream-bridge.js';
+import { handleSlashCommand, helpMarkdown } from './commands.js';
+import { PlanModeManager } from './planMode.js';
+import { SpeedTracker } from '../tools/speedMeter.js';
+import { registerVccCompaction } from '../compaction/index.js';
+import { Logger } from '../utils/logger.js';
 
 const logger = Logger.getInstance();
 

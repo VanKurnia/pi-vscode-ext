@@ -4,11 +4,11 @@
  * Ported from pi-blackhole (src/core/build-sections.ts) with extract
  * functions inlined for self-containment.
  */
-import type { NormalizedBlock, SectionData, FileOps } from './types';
-import { clipSentence, firstLine, nonEmptyLines, clip } from './content';
-import { extractPath } from './tool-args';
-import { buildBriefSections, stringifyBrief } from './brief';
-import { collapseSkillLines } from './skill-collapse';
+import type { NormalizedBlock, SectionData, FileOps } from './types.js';
+import { clipSentence, firstLine, nonEmptyLines, clip } from './content.js';
+import { extractPath } from './tool-args.js';
+import { buildBriefSections, stringifyBrief } from './brief.js';
+import { collapseSkillLines } from './skill-collapse.js';
 
 // ── BuildSectionsInput ──
 

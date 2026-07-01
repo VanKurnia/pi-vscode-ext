@@ -1,5 +1,5 @@
-import { Tool } from '../agent/tools';
-import { SkillDiscovery } from '../agent/skills';
+import { Tool } from '../agent/tools.js';
+import { SkillDiscovery } from '../agent/skills.js';
 
 export function createSkillTools(discovery: SkillDiscovery): Tool[] {
     return [
