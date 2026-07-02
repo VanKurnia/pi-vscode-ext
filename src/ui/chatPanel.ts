@@ -8,6 +8,9 @@
 
 import * as vscode from 'vscode';
 import type { AgentHarness } from '@earendil-works/pi-agent-core';
+import { Logger } from '../utils/logger.js';
+
+const logger = Logger.getInstance();
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -27,6 +30,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     private harness: AgentHarness;
     private history: ChatMessage[] = [];
     private modelName: string;
+    private abortController: AbortController | null = null;
 
     constructor(
         private readonly extensionUri: vscode.Uri,
@@ -73,6 +77,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
                     this.history = [];
                     this.updateWebview();
                     break;
+                case 'abort':
+                    this.abortCurrentRequest();
+                    break;
                 case 'ready':
                     this.postMessage({
                         type: 'init',
@@ -86,6 +93,14 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
     // ─── Message handling ────────────────────────────────────────────────────
 
+    private abortCurrentRequest(): void {
+        if (this.abortController) {
+            logger.info('[chatPanel] Aborting current request');
+            this.abortController.abort();
+            this.abortController = null;
+        }
+    }
+
     private async handleUserMessage(text: string): Promise<void> {
         if (!text.trim()) return;
 
@@ -98,10 +113,35 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         this.updateWebview();
         this.postMessage({ type: 'thinking' });
 
+        // Create abort controller for this request
+        this.abortController = new AbortController();
+        const signal = this.abortController.signal;
+
+        logger.info(`[chatPanel] Sending message: ${text.slice(0, 100)}`);
+
         try {
-            const response = await this.harness.prompt(text);
+            // Race between prompt and timeout (60s)
+            const timeoutPromise = new Promise<never>((_, reject) => {
+                const timer = setTimeout(() => {
+                    reject(new Error('Request timed out after 60s. Check your API settings (pi-agent.api.baseUrl, pi-agent.api.apiKey).'));
+                }, 60_000);
+                signal.addEventListener('abort', () => {
+                    clearTimeout(timer);
+                    reject(new Error('Request cancelled by user.'));
+                });
+            });
+
+            const response = await Promise.race([
+                this.harness.prompt(text),
+                timeoutPromise,
+            ]);
+
+            if (signal.aborted) return;
+
             const content = this.extractText(response);
             const tokenUsage = this.extractTokenUsage(response);
+
+            logger.info(`[chatPanel] Got response: ${content.length} chars`);
 
             const assistantMsg: ChatMessage = {
                 role: 'assistant',
@@ -111,15 +151,19 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             };
             this.history.push(assistantMsg);
         } catch (err: any) {
+            const errMsg = err?.message ?? 'Unknown error';
+            logger.error(`[chatPanel] Error: ${errMsg}`);
+
             this.history.push({
                 role: 'assistant',
-                content: `**Error:** ${err.message ?? 'Unknown error'}`,
+                content: `**Error:** ${errMsg}\n\n---\n💡 **Check settings:** \`pi-agent.api.baseUrl\` and \`pi-agent.api.apiKey\``,
                 timestamp: Date.now(),
             });
+        } finally {
+            this.abortController = null;
+            this.postMessage({ type: 'done' });
+            this.updateWebview();
         }
-
-        this.postMessage({ type: 'done' });
-        this.updateWebview();
     }
 
     private extractText(response: any): string {
@@ -203,6 +247,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             <div class="thinking-avatar">\u03C0</div>
             <div class="thinking-dots"><span></span><span></span><span></span></div>
             <span class="thinking-label">Thinking\u2026</span>
+            <button id="stop-btn" class="stop-btn" title="Stop generation">Stop</button>
         </div>
         <div id="mention-popup"></div>
         <div id="input-area">
@@ -432,6 +477,8 @@ html, body {
 .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes thinkPulse { 0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
 .thinking-label { font-size: 12px; color: var(--pi-fg-muted); font-style: italic; }
+.stop-btn { margin-left: auto; padding: 2px 8px; border: 1px solid var(--pi-border); border-radius: 4px; background: transparent; color: var(--pi-fg-muted); cursor: pointer; font-size: 11px; font-family: var(--pi-font); transition: all 0.15s; }
+.stop-btn:hover { background: var(--pi-error); color: #fff; border-color: var(--pi-error); }
 
 /* ── Input area ── */
 #input-area { flex-shrink: 0; padding: 10px 12px; border-top: 1px solid var(--pi-border); background: var(--pi-bg); }
@@ -509,6 +556,7 @@ function getScript(_nonce: string): string {
     var input = document.getElementById('input');
     var sendBtn = document.getElementById('send-btn');
     var clearBtn = document.getElementById('clear-btn');
+    var stopBtn = document.getElementById('stop-btn');
     var modelNameEl = document.getElementById('model-name');
     var mentionPopup = document.getElementById('mention-popup');
 
@@ -851,6 +899,7 @@ function getScript(_nonce: string): string {
     input.addEventListener('input', function() { autoResize(); updateSendState(); checkMention(); });
     sendBtn.addEventListener('click', send);
     clearBtn.addEventListener('click', function() { vscode.postMessage({ type: 'clear' }); });
+    stopBtn.addEventListener('click', function() { vscode.postMessage({ type: 'abort' }); });
 
     // Delegated shortcut chip clicks
     document.addEventListener('click', function(e) {
