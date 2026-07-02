@@ -12,6 +12,7 @@ import { InlineCompletionProvider } from './ui/inlineCompletion.js';
 import { AgentsTreeProvider } from './ui/agentsTreeProvider.js';
 import { ChangesTreeProvider } from './ui/changesTreeProvider.js';
 import { TodoTreeProvider } from './ui/todoProvider.js';
+import { ChatPanelProvider } from './ui/chatPanel.js';
 import { Logger } from './utils/logger.js';
 import { getConfig, onConfigChange } from './utils/config.js';
 import { registerChatParticipant } from './chat/participant.js';
@@ -48,6 +49,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.window.registerTreeDataProvider('pi-agent.changesView', changesProvider),
         vscode.window.registerTreeDataProvider('pi-agent.todoView', todoProvider),
         agentsProvider, changesProvider, todoProvider
+    );
+
+    // ── Chat panel (webview view) ───────────────────────────
+    const chatPanel = new ChatPanelProvider(
+        context.extensionUri,
+        bridge.harness as any,
+        bridge.chatModel.id
+    );
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(ChatPanelProvider.viewType, chatPanel, {
+            webviewOptions: { retainContextWhenHidden: true },
+        })
     );
 
     // ── Status bar ───────────────────────────────────────────

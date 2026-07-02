@@ -1,7 +1,7 @@
 {
     "name": "pi-vscode-ext",
     "displayName": "Pi Agent",
-    "description": "AI coding agent for VS Code — powered by Pi. GitHub Copilot-like experience with subagent orchestration, git tools, plan mode, and more.",
+    "description": "AI coding agent for VS Code \u2014 powered by Pi. GitHub Copilot-like experience with subagent orchestration, git tools, plan mode, and more.",
     "version": "0.2.0",
     "publisher": "pi-agent",
     "engines": {
@@ -35,7 +35,7 @@
                 "id": "pi-agent.chat",
                 "name": "pi",
                 "fullName": "Pi Agent",
-                "description": "AI coding agent — ask questions, generate code, run commands, manage git, and more.",
+                "description": "AI coding agent \u2014 ask questions, generate code, run commands, manage git, and more.",
                 "isSticky": true,
                 "commands": [
                     {
@@ -64,11 +64,11 @@
                     },
                     {
                         "name": "plan",
-                        "description": "Enter plan mode — create a step-by-step plan"
+                        "description": "Enter plan mode \u2014 create a step-by-step plan"
                     },
                     {
                         "name": "scout",
-                        "description": "Fast codebase recon — find patterns and map architecture"
+                        "description": "Fast codebase recon \u2014 find patterns and map architecture"
                     },
                     {
                         "name": "research",
@@ -184,6 +184,13 @@
         },
         "views": {
             "pi-agent": [
+                {
+                    "type": "webview",
+                    "id": "pi-agent.chatPanel",
+                    "name": "Chat",
+                    "icon": "images/icon.svg",
+                    "contextualTitle": "Pi Chat"
+                },
                 {
                     "type": "tree",
                     "id": "pi-agent.agentsView",
